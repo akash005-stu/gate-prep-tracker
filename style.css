@@ -771,18 +771,135 @@ main {
   transform: translateX(-50%) translateY(0);
 }
 
-/* Responsive */
+/* Auth gate */
+.auth-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 200;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--bg-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px),
+    linear-gradient(var(--bg-grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid-major) 1px, transparent 1px);
+  background-size: 16px 16px, 16px 16px, 80px 80px, 80px 80px;
+}
+
+.auth-card {
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 28px 26px;
+  width: 100%;
+  max-width: 380px;
+  position: relative;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.auth-card::before { content: ""; position: absolute; top: -1px; left: -1px; width: 12px; height: 12px; border-top: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
+.auth-card::after { content: ""; position: absolute; bottom: -1px; right: -1px; width: 12px; height: 12px; border-bottom: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
+
+.auth-wordmark {
+  color: var(--ink);
+  justify-content: center;
+  margin-bottom: 20px;
+  font-size: 1rem;
+}
+.auth-wordmark .compass { color: var(--maths); }
+
+.auth-tabs {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.auth-tab {
+  flex: 1;
+  background: var(--panel-dim);
+  border: none;
+  padding: 9px 10px;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.auth-tab.is-active {
+  background: var(--ink);
+  color: #fff;
+}
+
+.auth-submit { width: 100%; }
+
+.auth-error {
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: 0.83rem;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  margin: -4px 0 14px;
+}
+
+.auth-note {
+  margin: 16px 0 0;
+  text-align: center;
+}
+
+/* Responsive — tablet / narrow laptop */
+@media (max-width: 860px) {
+  .board { padding: 20px 16px 70px; }
+  .subject-grid { grid-template-columns: repeat(2, 1fr); }
+  .card { padding: 18px 18px; }
+}
+
+/* Responsive — phones (landscape and larger) */
 @media (max-width: 700px) {
   .subject-grid { grid-template-columns: 1fr; }
   .focus-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .focus-value { font-size: 1rem; }
   .settings-grid-head, .settings-subject-row { grid-template-columns: 1fr 74px 74px; }
+  .settings-two-col { grid-template-columns: 1fr; gap: 0; }
+  .card-head { flex-wrap: wrap; row-gap: 6px; }
+  .topbar { row-gap: 8px; }
+  .topbar-right { gap: 12px; width: 100%; justify-content: flex-start; }
 }
 
-@media (max-width: 420px) {
-  .focus-grid { grid-template-columns: 1fr 1fr; }
+/* Responsive — small phones */
+@media (max-width: 480px) {
+  .board { padding: 16px 12px 60px; }
+  .card, .subject-card { padding: 16px; }
+  .hero { padding: 30px 2px 24px; }
+  .hero-detail { max-width: none; }
   .hero-footer { flex-direction: column; align-items: flex-start; gap: 8px; }
-  .day-strip { grid-template-columns: repeat(7, 1fr); }
+  .focus-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .focus-value { font-size: 0.88rem; }
+  .focus-label { font-size: 0.7rem; }
+  .modal { padding: 18px; max-height: 90vh; overflow-y: auto; }
+  .modal-overlay { padding: 12px; }
+  .day-strip { gap: 5px; }
+  .day-cell .lbl { font-size: 0.62rem; }
+  .backup-actions { flex-direction: column; align-items: stretch; }
+  .backup-actions .btn { justify-content: center; }
+  .plan-table { font-size: 0.76rem; }
+}
+
+/* Responsive — very small phones */
+@media (max-width: 380px) {
+  .hero-number { font-size: clamp(2.6rem, 16vw, 3.6rem); }
+  .tick-mark { font-size: 1.3rem; }
+  .focus-grid { grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+  .week-subject-row { grid-template-columns: 48px 1fr 50px; font-size: 0.78rem; }
+  .settings-grid-head, .settings-subject-row { grid-template-columns: 1fr 60px 60px; }
+}
+
+/* Responsive — wide laptops / desktops: give the board a touch more room */
+@media (min-width: 1200px) {
+  .board { max-width: 980px; }
 }
 
 :focus-visible {
