@@ -8,10 +8,53 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css" />
+
+<!-- Firebase (compat SDKs — plain <script> tags, no build step needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
 </head>
 <body>
 
-  <div class="board">
+  <!-- Auth gate — shown until signed in -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-card">
+      <div class="wordmark auth-wordmark">
+        <svg class="compass" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <line x1="12" y1="2.5" x2="12" y2="6" stroke="currentColor" stroke-width="1.4"/>
+          <line x1="12" y1="18" x2="12" y2="21.5" stroke="currentColor" stroke-width="1.4"/>
+          <circle cx="12" cy="12" r="1.6" fill="currentColor"/>
+          <line x1="12" y1="12" x2="16.5" y2="8" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+        <span>GATE Drafting Log</span>
+      </div>
+      <div class="auth-tabs">
+        <button type="button" id="tab-login" class="auth-tab is-active">Log in</button>
+        <button type="button" id="tab-signup" class="auth-tab">Create account</button>
+      </div>
+      <form id="auth-form">
+        <label class="field">
+          <span>Email</span>
+          <input type="email" id="auth-email" required autocomplete="email" />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" id="auth-password" required autocomplete="current-password" minlength="6" />
+        </label>
+        <p id="auth-error" class="auth-error" hidden></p>
+        <button type="submit" id="auth-submit-btn" class="btn btn-primary auth-submit">Log in</button>
+      </form>
+      <p class="muted small auth-note">Your data is stored in your own account and syncs across any device you log in on.</p>
+    </div>
+  </div>
+
+  <div id="app-loading" class="auth-screen" hidden>
+    <p class="muted">Loading your plan…</p>
+  </div>
+
+  <div class="board" id="board" hidden>
 
     <!-- Top bar -->
     <header class="topbar">
@@ -26,9 +69,11 @@
         <span>GATE Drafting Log</span>
       </div>
       <div class="topbar-right">
+        <span id="account-email" class="date-chip"></span>
         <span id="today-date" class="date-chip"></span>
         <button id="settings-btn" class="link-btn" type="button">Plan settings</button>
         <button id="edit-name-btn" class="link-btn" type="button">Set your name</button>
+        <button id="sign-out-btn" class="link-btn" type="button">Sign out</button>
       </div>
     </header>
 
@@ -181,7 +226,7 @@
         <div class="card-head">
           <h2>Backup</h2>
         </div>
-        <p class="muted small" style="margin-top:0">Your progress lives only in this browser. Export a copy so a cleared cache never costs you a term's work.</p>
+        <p class="muted small" style="margin-top:0">Your data syncs to your account automatically. Export a copy anyway — handy for switching apps or keeping an offline record.</p>
         <div class="backup-actions">
           <button id="export-btn" class="btn btn-ghost" type="button">Export backup (.json)</button>
           <label class="btn btn-ghost file-btn">

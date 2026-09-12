@@ -771,6 +771,85 @@ main {
   transform: translateX(-50%) translateY(0);
 }
 
+/* Auth gate */
+.auth-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 200;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--bg-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px),
+    linear-gradient(var(--bg-grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid-major) 1px, transparent 1px);
+  background-size: 16px 16px, 16px 16px, 80px 80px, 80px 80px;
+}
+
+.auth-card {
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 28px 26px;
+  width: 100%;
+  max-width: 380px;
+  position: relative;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.auth-card::before { content: ""; position: absolute; top: -1px; left: -1px; width: 12px; height: 12px; border-top: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
+.auth-card::after { content: ""; position: absolute; bottom: -1px; right: -1px; width: 12px; height: 12px; border-bottom: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
+
+.auth-wordmark {
+  color: var(--ink);
+  justify-content: center;
+  margin-bottom: 20px;
+  font-size: 1rem;
+}
+.auth-wordmark .compass { color: var(--maths); }
+
+.auth-tabs {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.auth-tab {
+  flex: 1;
+  background: var(--panel-dim);
+  border: none;
+  padding: 9px 10px;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.auth-tab.is-active {
+  background: var(--ink);
+  color: #fff;
+}
+
+.auth-submit { width: 100%; }
+
+.auth-error {
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: 0.83rem;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  margin: -4px 0 14px;
+}
+
+.auth-note {
+  margin: 16px 0 0;
+  text-align: center;
+}
+
 /* Responsive — tablet / narrow laptop */
 @media (max-width: 860px) {
   .board { padding: 20px 16px 70px; }
