@@ -906,3 +906,6 @@ main {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }
+
+/* Ensure the HTML hidden attribute always wins over auth-screen display:flex. */
+[hidden] { display: none !important; }
