@@ -28,20 +28,9 @@ function defaultConfig() {
 }
 
 /* =========================================================
-   FIREBASE — auth + per-account cloud storage.
-   firebaseConfig comes from firebase-config.js.
-   ========================================================= */
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
-let currentUser = null;
-
-/* =========================================================
    STATE
-   `state` is only meaningful once a user is signed in and
-   their document has loaded from Firestore — see initApp().
    ========================================================= */
-let state = defaultState();
+let state = loadState();
 
 function defaultState() {
   return {
@@ -53,32 +42,32 @@ function defaultState() {
   };
 }
 
-/* Merge any partial/saved object on top of a full default shape,
-   so older backups or partially-written docs never crash the app. */
-function mergeIntoDefaultState(parsed) {
-  const merged = { ...defaultState(), ...(parsed || {}) };
-  merged.config = { ...defaultConfig(), ...((parsed || {}).config || {}) };
-  merged.config.subjects = {
-    maths: { ...defaultConfig().subjects.maths, ...(((parsed || {}).config || {}).subjects || {}).maths },
-    aem:   { ...defaultConfig().subjects.aem,   ...(((parsed || {}).config || {}).subjects || {}).aem },
-    som:   { ...defaultConfig().subjects.som,   ...(((parsed || {}).config || {}).subjects || {}).som },
-  };
-  return merged;
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    const merged = { ...defaultState(), ...parsed };
+    merged.config = { ...defaultConfig(), ...(parsed.config || {}) };
+    merged.config.subjects = {
+      maths: { ...defaultConfig().subjects.maths, ...((parsed.config || {}).subjects || {}).maths },
+      aem:   { ...defaultConfig().subjects.aem,   ...((parsed.config || {}).subjects || {}).aem },
+      som:   { ...defaultConfig().subjects.som,   ...((parsed.config || {}).subjects || {}).som },
+    };
+    return merged;
+  } catch (e) {
+    console.error("Could not read saved progress, starting fresh.", e);
+    return defaultState();
+  }
 }
 
-function localCacheKey(uid) { return `${STORAGE_KEY}-cache-${uid}`; }
-
 function saveState() {
-  if (!currentUser) return;
   try {
-    localStorage.setItem(localCacheKey(currentUser.uid), JSON.stringify(state));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
-    console.error("Could not cache progress locally.", e);
+    console.error("Could not save progress.", e);
+    showToast("Could not save — your browser storage may be full.");
   }
-  db.collection("users").doc(currentUser.uid).set(state).catch(e => {
-    console.error("Could not save to your account.", e);
-    showToast("Saved on this device, but couldn't sync to your account (check your connection).");
-  });
 }
 
 /* Merged course data: fixed meta + editable numbers */
@@ -753,7 +742,14 @@ function handleImportFile(file) {
     try {
       const parsed = JSON.parse(reader.result);
       if (!parsed || !Array.isArray(parsed.logs)) throw new Error("Not a recognised backup file.");
-      state = mergeIntoDefaultState(parsed);
+      const merged = { ...defaultState(), ...parsed };
+      merged.config = { ...defaultConfig(), ...(parsed.config || {}) };
+      merged.config.subjects = {
+        maths: { ...defaultConfig().subjects.maths, ...((parsed.config || {}).subjects || {}).maths },
+        aem:   { ...defaultConfig().subjects.aem,   ...((parsed.config || {}).subjects || {}).aem },
+        som:   { ...defaultConfig().subjects.som,   ...((parsed.config || {}).subjects || {}).som },
+      };
+      state = merged;
       saveState();
       render();
       showToast("Backup imported.");
@@ -775,118 +771,12 @@ function handleReset() {
 }
 
 /* =========================================================
-   AUTH
-   ========================================================= */
-let authMode = "login"; // "login" | "signup"
-
-function setAuthMode(mode) {
-  authMode = mode;
-  document.getElementById("tab-login").classList.toggle("is-active", mode === "login");
-  document.getElementById("tab-signup").classList.toggle("is-active", mode === "signup");
-  document.getElementById("auth-submit-btn").textContent = mode === "login" ? "Log in" : "Create account";
-  document.getElementById("auth-password").setAttribute("autocomplete", mode === "login" ? "current-password" : "new-password");
-  hideAuthError();
-}
-
-function showAuthError(message) {
-  const el = document.getElementById("auth-error");
-  el.textContent = message;
-  el.hidden = false;
-}
-
-function hideAuthError() {
-  document.getElementById("auth-error").hidden = true;
-}
-
-function friendlyAuthError(err) {
-  switch (err.code) {
-    case "auth/invalid-email": return "That email address doesn't look right.";
-    case "auth/user-not-found": return "No account found with that email. Try 'Create account' instead.";
-    case "auth/wrong-password": case "auth/invalid-credential": return "Incorrect email or password.";
-    case "auth/email-already-in-use": return "An account already exists with that email. Try 'Log in' instead.";
-    case "auth/weak-password": return "Password should be at least 6 characters.";
-    default: return err.message || "Something went wrong. Please try again.";
-  }
-}
-
-function handleAuthSubmit(e) {
-  e.preventDefault();
-  hideAuthError();
-  const email = document.getElementById("auth-email").value.trim();
-  const password = document.getElementById("auth-password").value;
-  const submitBtn = document.getElementById("auth-submit-btn");
-  submitBtn.disabled = true;
-
-  const action = authMode === "login"
-    ? auth.signInWithEmailAndPassword(email, password)
-    : auth.createUserWithEmailAndPassword(email, password);
-
-  action
-    .catch(err => showAuthError(friendlyAuthError(err)))
-    .finally(() => { submitBtn.disabled = false; });
-}
-
-function handleSignOut() {
-  auth.signOut();
-}
-
-/* Runs once per sign-in: load this user's document (or create it),
-   then reveal the app. */
-function initApp(user) {
-  document.getElementById("app-loading").hidden = false;
-  document.getElementById("auth-screen").hidden = true;
-
-  db.collection("users").doc(user.uid).get()
-    .then(doc => {
-      if (doc.exists) {
-        state = mergeIntoDefaultState(doc.data());
-      } else {
-        state = defaultState();
-        return db.collection("users").doc(user.uid).set(state).then(() => state);
-      }
-    })
-    .catch(err => {
-      console.error("Could not reach your account, using last synced copy on this device.", err);
-      const cached = localStorage.getItem(localCacheKey(user.uid));
-      state = mergeIntoDefaultState(cached ? JSON.parse(cached) : null);
-      showToast("Offline — showing the last synced copy on this device.");
-    })
-    .finally(() => {
-      document.getElementById("account-email").textContent = user.email;
-      populateSubjectSelect();
-      render();
-      document.getElementById("app-loading").hidden = true;
-      document.getElementById("board").hidden = false;
-    });
-}
-
-function teardownApp() {
-  state = defaultState();
-  document.getElementById("board").hidden = true;
-  document.getElementById("app-loading").hidden = true;
-  document.getElementById("auth-screen").hidden = false;
-  document.getElementById("auth-email").value = "";
-  document.getElementById("auth-password").value = "";
-  hideAuthError();
-}
-
-auth.onAuthStateChanged(user => {
-  currentUser = user;
-  if (user) initApp(user);
-  else teardownApp();
-});
-
-/* =========================================================
-   INIT — wires static UI controls once; auth state controls
-   when the data actually loads and the board becomes visible.
+   INIT
    ========================================================= */
 document.addEventListener("DOMContentLoaded", () => {
+  populateSubjectSelect();
   wireLectureMinutesSync();
-
-  document.getElementById("tab-login").addEventListener("click", () => setAuthMode("login"));
-  document.getElementById("tab-signup").addEventListener("click", () => setAuthMode("signup"));
-  document.getElementById("auth-form").addEventListener("submit", handleAuthSubmit);
-  document.getElementById("sign-out-btn").addEventListener("click", handleSignOut);
+  render();
 
   document.getElementById("log-study-btn").addEventListener("click", openModal);
   document.getElementById("modal-close-btn").addEventListener("click", closeModal);
