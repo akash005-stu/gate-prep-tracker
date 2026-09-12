@@ -771,18 +771,56 @@ main {
   transform: translateX(-50%) translateY(0);
 }
 
-/* Responsive */
+/* Responsive — tablet / narrow laptop */
+@media (max-width: 860px) {
+  .board { padding: 20px 16px 70px; }
+  .subject-grid { grid-template-columns: repeat(2, 1fr); }
+  .card { padding: 18px 18px; }
+}
+
+/* Responsive — phones (landscape and larger) */
 @media (max-width: 700px) {
   .subject-grid { grid-template-columns: 1fr; }
   .focus-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .focus-value { font-size: 1rem; }
   .settings-grid-head, .settings-subject-row { grid-template-columns: 1fr 74px 74px; }
+  .settings-two-col { grid-template-columns: 1fr; gap: 0; }
+  .card-head { flex-wrap: wrap; row-gap: 6px; }
+  .topbar { row-gap: 8px; }
+  .topbar-right { gap: 12px; width: 100%; justify-content: flex-start; }
 }
 
-@media (max-width: 420px) {
-  .focus-grid { grid-template-columns: 1fr 1fr; }
+/* Responsive — small phones */
+@media (max-width: 480px) {
+  .board { padding: 16px 12px 60px; }
+  .card, .subject-card { padding: 16px; }
+  .hero { padding: 30px 2px 24px; }
+  .hero-detail { max-width: none; }
   .hero-footer { flex-direction: column; align-items: flex-start; gap: 8px; }
-  .day-strip { grid-template-columns: repeat(7, 1fr); }
+  .focus-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .focus-value { font-size: 0.88rem; }
+  .focus-label { font-size: 0.7rem; }
+  .modal { padding: 18px; max-height: 90vh; overflow-y: auto; }
+  .modal-overlay { padding: 12px; }
+  .day-strip { gap: 5px; }
+  .day-cell .lbl { font-size: 0.62rem; }
+  .backup-actions { flex-direction: column; align-items: stretch; }
+  .backup-actions .btn { justify-content: center; }
+  .plan-table { font-size: 0.76rem; }
+}
+
+/* Responsive — very small phones */
+@media (max-width: 380px) {
+  .hero-number { font-size: clamp(2.6rem, 16vw, 3.6rem); }
+  .tick-mark { font-size: 1.3rem; }
+  .focus-grid { grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+  .week-subject-row { grid-template-columns: 48px 1fr 50px; font-size: 0.78rem; }
+  .settings-grid-head, .settings-subject-row { grid-template-columns: 1fr 60px 60px; }
+}
+
+/* Responsive — wide laptops / desktops: give the board a touch more room */
+@media (min-width: 1200px) {
+  .board { max-width: 980px; }
 }
 
 :focus-visible {
