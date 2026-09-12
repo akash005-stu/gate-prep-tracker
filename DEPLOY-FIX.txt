@@ -1,0 +1,14 @@
+GATE Study Dashboard – loading-screen fix
+
+Replace the files in your Git repo with the files in this folder, then commit and push.
+
+What this fixes:
+1. The dashboard no longer waits indefinitely for Firestore.
+2. Cached/default data is shown immediately.
+3. Firestore sync happens in the background with an 8-second timeout.
+4. Firestore long-polling is enabled for better browser/network compatibility.
+5. A render error can no longer leave the loading overlay permanently visible.
+
+After pushing:
+- Vercel should create a new deployment.
+- Hard refresh the deployed site with Ctrl+Shift+R.

@@ -34,6 +34,17 @@ function defaultConfig() {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
+
+// Some browsers/networks used with Vercel can leave a Firestore read
+// pending for a long time. Prefer long-polling for better compatibility.
+try {
+  db.settings({
+    experimentalForceLongPolling: true,
+  });
+} catch (e) {
+  console.warn("Could not apply Firestore network settings:", e);
+}
+
 let currentUser = null;
 
 /* =========================================================
@@ -848,67 +859,101 @@ function handleSignOut() {
   auth.signOut();
 }
 
-/* Runs once per sign-in: load this user's document (or create it),
-   then reveal the app. */
-function initApp(user) {
+/* Runs once per sign-in.
+   IMPORTANT: the dashboard must never wait forever for Firestore.
+   We render from local/default state first, then sync from Firestore
+   in the background. */
+function readCachedState(uid) {
+  try {
+    const raw = localStorage.getItem(localCacheKey(uid));
+    return raw ? mergeIntoDefaultState(JSON.parse(raw)) : null;
+  } catch (err) {
+    console.warn("Could not read cached account data:", err);
+    return null;
+  }
+}
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms} ms`)), ms);
+    }),
+  ]);
+}
+
+function revealApp(user) {
   const loading = document.getElementById("app-loading");
   const authScreen = document.getElementById("auth-screen");
   const board = document.getElementById("board");
 
-  loading.hidden = false;
+  loading.hidden = true;
   authScreen.hidden = true;
+  board.hidden = false;
+  document.getElementById("account-email").textContent = user.email || "";
 
-  const finishLoading = () => {
-    // Reveal the app before rendering. Previously a render exception could
-    // prevent these two lines from running and leave the loader forever.
-    loading.hidden = true;
-    board.hidden = false;
-    document.getElementById("account-email").textContent = user.email || "";
-
+  try {
+    populateSubjectSelect();
+    render();
+  } catch (err) {
+    console.error("Dashboard render failed:", err);
+    state = mergeIntoDefaultState(null);
     try {
       populateSubjectSelect();
       render();
-    } catch (err) {
-      console.error("The app loaded, but rendering failed:", err);
-      state = mergeIntoDefaultState(null);
-
-      try {
-        populateSubjectSelect();
-        render();
-      } catch (fallbackErr) {
-        console.error("Fallback render also failed:", fallbackErr);
-      }
+    } catch (fallbackErr) {
+      console.error("Fallback dashboard render failed:", fallbackErr);
     }
-  };
+  }
+}
 
-  db.collection("users").doc(user.uid).get()
+function initApp(user) {
+  const loading = document.getElementById("app-loading");
+  const authScreen = document.getElementById("auth-screen");
+
+  loading.hidden = false;
+  authScreen.hidden = true;
+
+  // Show the dashboard immediately from the last local copy, or defaults.
+  // This guarantees a Firestore/network problem cannot trap the UI on loading.
+  state = readCachedState(user.uid) || defaultState();
+  revealApp(user);
+
+  // Sync from Firestore in the background. The UI is not blocked by this.
+  withTimeout(
+    db.collection("users").doc(user.uid).get(),
+    8000,
+    "Firestore account read"
+  )
     .then(doc => {
       if (doc.exists) {
         state = mergeIntoDefaultState(doc.data());
+
+        try {
+          localStorage.setItem(localCacheKey(user.uid), JSON.stringify(state));
+        } catch (cacheErr) {
+          console.warn("Could not cache synced account data:", cacheErr);
+        }
+
+        revealApp(user);
       } else {
+        // New account: keep the UI usable and create the document in the background.
         state = defaultState();
-        return db.collection("users").doc(user.uid).set(state);
+        revealApp(user);
+
+        return withTimeout(
+          db.collection("users").doc(user.uid).set(state),
+          8000,
+          "Firestore account creation"
+        ).catch(err => {
+          console.warn("Could not create Firestore account document:", err);
+        });
       }
     })
     .catch(err => {
-      console.error("Could not reach your account, using last synced copy on this device.", err);
-
-      let cached = null;
-      try {
-        const raw = localStorage.getItem(localCacheKey(user.uid));
-        cached = raw ? JSON.parse(raw) : null;
-      } catch (cacheErr) {
-        console.error("Could not read cached account data.", cacheErr);
-      }
-
-      state = mergeIntoDefaultState(cached);
-      showToast("Offline — showing the last synced copy on this device.");
-    })
-    .then(() => finishLoading())
-    .catch(err => {
-      console.error("Unexpected app initialization error:", err);
-      state = mergeIntoDefaultState(null);
-      finishLoading();
+      console.warn("Firestore sync unavailable; continuing with local/default data.", err);
+      showToast("Loaded on this device. Cloud sync is currently unavailable.");
+      // The dashboard is already visible, so do not replace it with a loader.
     });
 }
 
