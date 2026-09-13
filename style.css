@@ -1,14 +1,15 @@
 :root {
   --bg: #0E2136;
-  --bg-grid: rgba(158, 205, 226, 0.09);
-  --bg-grid-major: rgba(158, 205, 226, 0.16);
+  --cyan: #79CBEA;
+  --cyan-dim: #3E6E86;
+  /* Grid lines derive from the theme accent so custom themes recolour the whole backdrop */
+  --bg-grid: color-mix(in srgb, var(--cyan) 13%, transparent);
+  --bg-grid-major: color-mix(in srgb, var(--cyan) 22%, transparent);
   --panel: #F3F7F9;
   --panel-dim: #E7EFF3;
   --line: #C7D7DE;
   --ink: #10222F;
   --ink-soft: #5C7382;
-  --cyan: #79CBEA;
-  --cyan-dim: #3E6E86;
 
   --maths: #E85D3D;
   --maths-soft: #FCE1D8;
@@ -89,6 +90,36 @@ body {
   font-family: var(--mono);
   color: var(--cyan-dim);
 }
+
+/* View switcher */
+.view-nav {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0 0;
+  border-bottom: 1px dashed var(--cyan-dim);
+}
+
+.view-nav-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #8FA9B8;
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 10px 4px 12px;
+  margin-right: 18px;
+  cursor: pointer;
+  transform: translateY(1px);
+}
+.view-nav-btn:hover { color: #fff; }
+.view-nav-btn.is-active {
+  color: #fff;
+  border-bottom-color: var(--cyan);
+}
+
+.view-panel { animation: hero-rise 0.35s ease both; }
+@media (prefers-reduced-motion: reduce) { .view-panel { animation: none; } }
 
 /* Hero */
 .hero {
@@ -564,7 +595,14 @@ main {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1;
   font-family: var(--mono);
+}
+
+.log-session-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 0.78rem;
 }
 
 .activity-main .notes {
@@ -746,6 +784,64 @@ main {
   margin: 6px 0 18px;
 }
 
+/* Flowmodoro timer */
+.timer-card { text-align: center; }
+.timer-card .card-head { text-align: left; }
+.timer-intro { text-align: left; margin: -6px 0 6px; }
+
+.timer-display-wrap {
+  padding: 22px 0 8px;
+}
+
+.timer-display {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: clamp(3rem, 14vw, 4.4rem);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-sublabel {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.timer-card.is-focusing .timer-display { color: var(--maths); }
+.timer-card.is-resting .timer-display { color: var(--som); }
+
+.timer-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 18px;
+}
+
+.timer-subject-field {
+  width: 100%;
+  max-width: 320px;
+  text-align: left;
+}
+
+.timer-main-btn {
+  min-width: 220px;
+}
+
+.timer-ratio-row {
+  text-align: left;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+
+.timer-ratio-row input[type="range"] {
+  width: 100%;
+  margin-top: 8px;
+  accent-color: var(--maths);
+}
+
 /* Toast */
 .toast {
   position: fixed;
@@ -850,6 +946,60 @@ main {
   text-align: center;
 }
 
+/* Theme / appearance */
+.theme-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 4px 0 18px;
+}
+
+.theme-swatch {
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  padding: 10px 6px 8px;
+  background: var(--panel-dim);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+}
+
+.theme-swatch-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.15);
+}
+
+.theme-swatch-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.theme-swatch.is-active {
+  border-color: var(--ink);
+  background: #fff;
+}
+.theme-swatch.is-active .theme-swatch-label { color: var(--ink); }
+.theme-swatch:hover { background: #fff; }
+
+.theme-custom-field {
+  align-items: flex-start;
+}
+.theme-custom-field input[type="color"] {
+  width: 60px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px;
+  background: #fff;
+  cursor: pointer;
+}
+
 /* Responsive — tablet / narrow laptop */
 @media (max-width: 860px) {
   .board { padding: 20px 16px 70px; }
@@ -886,6 +1036,8 @@ main {
   .backup-actions { flex-direction: column; align-items: stretch; }
   .backup-actions .btn { justify-content: center; }
   .plan-table { font-size: 0.76rem; }
+  .timer-main-btn { min-width: 0; width: 100%; }
+  .theme-swatches { grid-template-columns: repeat(3, 1fr); }
 }
 
 /* Responsive — very small phones */

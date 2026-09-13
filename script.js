@@ -24,6 +24,8 @@ function defaultConfig() {
     lectureLengthMin: 30,
     weekdayTarget: 2,
     weekendTarget: 6,
+    flowmodoro: { ratio: 5 },
+    theme: { preset: "blueprint", custom: false, hue: null },
   };
 }
 
@@ -61,6 +63,7 @@ function defaultState() {
     suggestedOverride: null,  // {date:'YYYY-MM-DD', subjects:['maths','som']}
     config: defaultConfig(),
     celebratedDates: [],      // dates we've already shown the "target hit" toast for
+    timerSessions: [],        // {id, date, subject, focusSeconds, restSeconds, ratio, completedAt}
   };
 }
 
@@ -79,6 +82,7 @@ function mergeIntoDefaultState(parsed) {
     ...source,
     logs: Array.isArray(source.logs) ? source.logs : [],
     celebratedDates: Array.isArray(source.celebratedDates) ? source.celebratedDates : [],
+    timerSessions: Array.isArray(source.timerSessions) ? source.timerSessions : [],
     suggestedOverride:
       source.suggestedOverride && typeof source.suggestedOverride === "object"
         ? source.suggestedOverride
@@ -91,6 +95,8 @@ function mergeIntoDefaultState(parsed) {
         aem:   { ...defaults.config.subjects.aem,   ...(parsedSubjects.aem || {}) },
         som:   { ...defaults.config.subjects.som,   ...(parsedSubjects.som || {}) },
       },
+      flowmodoro: { ...defaults.config.flowmodoro, ...(parsedConfig.flowmodoro || {}) },
+      theme: { ...defaults.config.theme, ...(parsedConfig.theme || {}) },
     },
   };
 }
@@ -117,6 +123,121 @@ function courseData() {
     out[key] = { ...SUBJECT_META[key], ...state.config.subjects[key] };
   });
   return out;
+}
+
+/* =========================================================
+   THEME — customizable accent colour, applied via CSS vars.
+   Grid-line tints in style.css derive from --cyan automatically
+   (color-mix), so setting these three vars re-themes the whole app.
+   ========================================================= */
+const THEME_PRESETS = {
+  blueprint: { label: "Blueprint", bg: "#0E2136", cyan: "#79CBEA", cyanDim: "#3E6E86" },
+  slate:     { label: "Slate",     bg: "#1B2233", cyan: "#9FB4E0", cyanDim: "#4C5D8A" },
+  forest:    { label: "Forest",    bg: "#0E2A1E", cyan: "#7CE0A8", cyanDim: "#2E7A55" },
+  sunset:    { label: "Sunset",    bg: "#331A12", cyan: "#F2A65A", cyanDim: "#B5651D" },
+  rose:      { label: "Rose",      bg: "#2B0F1D", cyan: "#F28FC0", cyanDim: "#B34A82" },
+  ocean:     { label: "Ocean",     bg: "#08262A", cyan: "#5FD9D0", cyanDim: "#1F8A82" },
+  violet:    { label: "Violet",    bg: "#211632", cyan: "#B79CEA", cyanDim: "#6E52A6" },
+  mono:      { label: "Mono",      bg: "#15181C", cyan: "#C7CDD4", cyanDim: "#6B7480" },
+};
+
+function hexToHsl(hex) {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.substring(0, 2), 16) / 255;
+  const g = parseInt(clean.substring(2, 4), 16) / 255;
+  const b = parseInt(clean.substring(4, 6), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s;
+  const l = (max + min) / 2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4;
+    }
+    h /= 6;
+  }
+  return { h: h * 360, s: s * 100, l: l * 100 };
+}
+
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = v => Math.round(v * 255).toString(16).padStart(2, "0");
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+
+/* Derive a full bg/cyan/cyanDim trio from a single hue picked by the user */
+function deriveThemeFromHex(hex) {
+  const { h } = hexToHsl(hex);
+  return {
+    bg: hslToHex(h, 46, 13),
+    cyan: hslToHex(h, 68, 74),
+    cyanDim: hslToHex(h, 40, 42),
+  };
+}
+
+function resolveTheme(themeConfig) {
+  const theme = themeConfig || defaultConfig().theme;
+  if (theme.custom && theme.hue) return deriveThemeFromHex(theme.hue);
+  return THEME_PRESETS[theme.preset] || THEME_PRESETS.blueprint;
+}
+
+function applyTheme(themeConfig) {
+  const { bg, cyan, cyanDim } = resolveTheme(themeConfig);
+  const root = document.documentElement.style;
+  root.setProperty("--bg", bg);
+  root.setProperty("--cyan", cyan);
+  root.setProperty("--cyan-dim", cyanDim);
+}
+
+function selectThemePreset(key) {
+  state.config.theme = { preset: key, custom: false, hue: null };
+  applyTheme(state.config.theme);
+  saveState();
+  renderThemeSwatches();
+}
+
+function selectCustomTheme(hex) {
+  state.config.theme = { preset: null, custom: true, hue: hex };
+  applyTheme(state.config.theme);
+  saveState();
+  renderThemeSwatches();
+}
+
+function renderThemeSwatches() {
+  const wrap = document.getElementById("theme-swatches");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  const theme = state.config.theme || defaultConfig().theme;
+  Object.keys(THEME_PRESETS).forEach(key => {
+    const preset = THEME_PRESETS[key];
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "theme-swatch" + (!theme.custom && theme.preset === key ? " is-active" : "");
+    btn.innerHTML = `
+      <span class="theme-swatch-dot" style="background:${preset.cyan}"></span>
+      <span class="theme-swatch-label">${preset.label}</span>
+    `;
+    btn.addEventListener("click", () => selectThemePreset(key));
+    wrap.appendChild(btn);
+  });
+  const customInput = document.getElementById("theme-custom-input");
+  if (customInput && theme.custom && theme.hue) customInput.value = theme.hue;
+}
+
+function openAppearanceModal() {
+  renderThemeSwatches();
+  document.getElementById("appearance-modal").classList.add("is-open");
+}
+
+function closeAppearanceModal() {
+  document.getElementById("appearance-modal").classList.remove("is-open");
 }
 
 /* =========================================================
@@ -282,6 +403,310 @@ function showToast(message) {
   el.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
+}
+
+/* =========================================================
+   VIEW SWITCHING — Dashboard vs. Focus Timer
+   ========================================================= */
+function switchView(view) {
+  document.getElementById("view-dashboard").hidden = view !== "dashboard";
+  document.getElementById("view-timer").hidden = view !== "timer";
+  document.querySelectorAll(".view-nav-btn").forEach(btn => {
+    btn.classList.toggle("is-active", btn.dataset.view === view);
+  });
+  if (view === "timer") renderTimerSessionList();
+}
+
+/* =========================================================
+   FLOWMODORO TIMER
+   Work with full focus for as long as it flows; when you stop,
+   a break proportional to the work (focus ÷ ratio) is earned.
+   Sessions are stored in state.timerSessions and cloud-synced
+   through the normal saveState() path. The in-progress timer
+   itself is kept in localStorage so a refresh doesn't lose it.
+   ========================================================= */
+let timerState = { status: "idle" }; // idle | focusing | resting
+let timerTickHandle = null;
+let lastCompletedSession = null;
+
+function timerSubjects() {
+  return { ...courseData(), general: { name: "General focus", short: "General", color: "#8FA9B8" } };
+}
+
+function timerStorageKey(uid) { return `${STORAGE_KEY}-timer-${uid}`; }
+
+function persistTimerState() {
+  if (!currentUser) return;
+  try {
+    if (timerState.status === "idle") {
+      localStorage.removeItem(timerStorageKey(currentUser.uid));
+    } else {
+      localStorage.setItem(timerStorageKey(currentUser.uid), JSON.stringify(timerState));
+    }
+  } catch (e) {
+    console.warn("Could not persist timer state:", e);
+  }
+}
+
+function loadTimerState(uid) {
+  try {
+    const raw = localStorage.getItem(timerStorageKey(uid));
+    return raw ? JSON.parse(raw) : { status: "idle" };
+  } catch (e) {
+    return { status: "idle" };
+  }
+}
+
+function populateTimerSubjectSelect() {
+  const select = document.getElementById("timer-subject");
+  if (!select) return;
+  const prev = select.value;
+  select.innerHTML = "";
+  const subs = timerSubjects();
+  Object.keys(subs).forEach(key => {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = subs[key].name;
+    select.appendChild(opt);
+  });
+  if (prev && subs[prev]) select.value = prev;
+}
+
+function formatClock(totalSeconds) {
+  const s = Math.max(Math.round(totalSeconds), 0);
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function formatDuration(totalSeconds) {
+  const mins = Math.round(totalSeconds / 60);
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+/* Short two-tone beep via Web Audio — no external asset needed */
+function playTimerBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [660, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.16);
+      gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + i * 0.16 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.16 + 0.3);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.16);
+      osc.stop(ctx.currentTime + i * 0.16 + 0.32);
+    });
+    setTimeout(() => ctx.close().catch(() => {}), 900);
+  } catch (e) { /* audio not available — silently skip */ }
+}
+
+function renderTimerUI() {
+  const card = document.querySelector(".timer-card");
+  const modePill = document.getElementById("timer-mode-pill");
+  const display = document.getElementById("timer-display");
+  const sublabel = document.getElementById("timer-sublabel");
+  const idleControls = document.getElementById("timer-idle-controls");
+  const focusControls = document.getElementById("timer-focus-controls");
+  const restControls = document.getElementById("timer-rest-controls");
+  const subjectSelect = document.getElementById("timer-subject");
+  const ratioInput = document.getElementById("timer-ratio");
+  if (!card) return;
+
+  card.classList.remove("is-focusing", "is-resting");
+  const subs = timerSubjects();
+
+  if (timerState.status === "focusing") {
+    card.classList.add("is-focusing");
+    modePill.textContent = "Focusing";
+    const elapsed = (Date.now() - timerState.startedAt) / 1000;
+    display.textContent = formatClock(elapsed);
+    sublabel.textContent = `Focused on ${subs[timerState.subject] ? subs[timerState.subject].name : "study"} — keep going`;
+    idleControls.hidden = true;
+    focusControls.hidden = false;
+    restControls.hidden = true;
+    ratioInput.value = timerState.ratio;
+    document.getElementById("ratio-value").textContent = timerState.ratio;
+    ratioInput.disabled = true;
+  } else if (timerState.status === "resting") {
+    card.classList.add("is-resting");
+    modePill.textContent = "On a break";
+    const remaining = timerState.restSeconds - (Date.now() - timerState.startedAt) / 1000;
+    display.textContent = formatClock(Math.max(remaining, 0));
+    sublabel.textContent = `Break earned from ${formatDuration(timerState.focusSeconds)} of focus`;
+    idleControls.hidden = true;
+    focusControls.hidden = true;
+    restControls.hidden = false;
+    ratioInput.disabled = true;
+    if (remaining <= 0) {
+      finishTimerCycle(true);
+      return;
+    }
+  } else {
+    modePill.textContent = "Ready";
+    display.textContent = "00:00";
+    sublabel.textContent = "Tap start when you're ready";
+    idleControls.hidden = false;
+    focusControls.hidden = true;
+    restControls.hidden = true;
+    ratioInput.disabled = false;
+    const ratio = state.config.flowmodoro.ratio;
+    ratioInput.value = ratio;
+    document.getElementById("ratio-value").textContent = ratio;
+  }
+}
+
+function timerTick() {
+  if (timerState.status === "idle") return;
+  renderTimerUI();
+}
+
+function startTimerTicker() {
+  clearInterval(timerTickHandle);
+  timerTickHandle = setInterval(timerTick, 500);
+}
+
+function handleTimerStart() {
+  const subject = document.getElementById("timer-subject").value;
+  const ratio = Number(document.getElementById("timer-ratio").value) || 5;
+  state.config.flowmodoro.ratio = ratio;
+  timerState = { status: "focusing", subject, startedAt: Date.now(), ratio };
+  persistTimerState();
+  saveState();
+  renderTimerUI();
+}
+
+function handleTimerEndFocus() {
+  if (timerState.status !== "focusing") return;
+  const focusSeconds = Math.max(Math.round((Date.now() - timerState.startedAt) / 1000), 1);
+  const ratio = timerState.ratio;
+  const restSeconds = Math.max(Math.round(focusSeconds / ratio), 0);
+  const subject = timerState.subject;
+
+  const session = {
+    id: Date.now(),
+    date: formatISODate(todayDate()),
+    subject,
+    focusSeconds,
+    restSeconds,
+    ratio,
+    completedAt: new Date().toISOString(),
+  };
+  state.timerSessions.push(session);
+  lastCompletedSession = session;
+  saveState();
+  renderTimerSessionList();
+
+  if (restSeconds > 0) {
+    timerState = { status: "resting", subject, startedAt: Date.now(), restSeconds, focusSeconds };
+    persistTimerState();
+    renderTimerUI();
+    showToast(`Focus block logged — ${formatDuration(focusSeconds)}. Enjoy a ${formatDuration(restSeconds)} break.`);
+  } else {
+    finishTimerCycle(false);
+    showToast(`Focus block logged — ${formatDuration(focusSeconds)}.`);
+  }
+}
+
+function handleTimerDiscard() {
+  if (timerState.status !== "focusing") return;
+  const ok = confirm("Discard this focus session without saving it?");
+  if (!ok) return;
+  finishTimerCycle(false);
+  showToast("Session discarded.");
+}
+
+function handleTimerSkipRest() {
+  if (timerState.status !== "resting") return;
+  finishTimerCycle(false);
+  showToast("Break skipped. Ready for another focus block.");
+}
+
+function handleTimerAddMinute() {
+  if (timerState.status !== "resting") return;
+  timerState.restSeconds += 60;
+  persistTimerState();
+  renderTimerUI();
+}
+
+function finishTimerCycle(playSound) {
+  const wasResting = timerState.status === "resting";
+  timerState = { status: "idle" };
+  persistTimerState();
+  renderTimerUI();
+  if (playSound) {
+    playTimerBeep();
+    showToast("Break's over — ready for another focus block?");
+  }
+  if (wasResting) renderTimerSessionList();
+}
+
+function renderTimerSessionList() {
+  const list = document.getElementById("timer-session-list");
+  const totalEl = document.getElementById("timer-today-total");
+  if (!list || !totalEl) return;
+
+  const todayStr = formatISODate(todayDate());
+  const todaySessions = state.timerSessions
+    .filter(s => s.date === todayStr)
+    .sort((a, b) => b.id - a.id);
+
+  const totalFocus = todaySessions.reduce((s, x) => s + x.focusSeconds, 0);
+  totalEl.textContent = `${formatDuration(totalFocus)} focused`;
+
+  list.innerHTML = "";
+  if (todaySessions.length === 0) {
+    list.innerHTML = `<li class="muted small">No focus sessions logged yet today.</li>`;
+    return;
+  }
+
+  const subs = timerSubjects();
+  todaySessions.forEach(session => {
+    const c = subs[session.subject] || subs.general;
+    const time = new Date(session.completedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const li = document.createElement("li");
+    li.className = "activity-item";
+    li.innerHTML = `
+      <span class="activity-tag" style="background:${c.color}22; color:${c.color}">${c.short}</span>
+      <div class="activity-main">
+        <span>${time} · ${formatDuration(session.focusSeconds)} focus${session.restSeconds ? ` · ${formatDuration(session.restSeconds)} break` : ""}</span>
+      </div>
+      <button class="link-btn log-session-btn" data-id="${session.id}" type="button">Log as study</button>
+      <button class="delete-btn" data-id="${session.id}" aria-label="Delete session">&times;</button>
+    `;
+    list.appendChild(li);
+  });
+
+  list.querySelectorAll(".delete-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.id);
+      state.timerSessions = state.timerSessions.filter(s => s.id !== id);
+      saveState();
+      renderTimerSessionList();
+    });
+  });
+
+  list.querySelectorAll(".log-session-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.id);
+      const session = state.timerSessions.find(s => s.id === id);
+      if (session) openModalFromTimerSession(session);
+    });
+  });
+}
+
+function openModalFromTimerSession(session) {
+  openModal();
+  const cd = courseData();
+  const subjectSelect = document.getElementById("log-subject");
+  if (cd[session.subject]) subjectSelect.value = session.subject;
+  document.getElementById("log-date").value = session.date;
+  document.getElementById("log-minutes").value = Math.round(session.focusSeconds / 60);
+  document.getElementById("log-notes").value = `Flowmodoro focus session (${formatDuration(session.focusSeconds)}, 1:${session.ratio} break)`;
 }
 
 /* =========================================================
@@ -891,16 +1316,21 @@ function revealApp(user) {
   authScreen.hidden = true;
   board.hidden = false;
   document.getElementById("account-email").textContent = user.email || "";
+  applyTheme(state.config.theme);
 
   try {
     populateSubjectSelect();
+    populateTimerSubjectSelect();
     render();
+    renderTimerSessionList();
   } catch (err) {
     console.error("Dashboard render failed:", err);
     state = mergeIntoDefaultState(null);
     try {
       populateSubjectSelect();
+      populateTimerSubjectSelect();
       render();
+      renderTimerSessionList();
     } catch (fallbackErr) {
       console.error("Fallback dashboard render failed:", fallbackErr);
     }
@@ -917,6 +1347,8 @@ function initApp(user) {
   // Show the dashboard immediately from the last local copy, or defaults.
   // This guarantees a Firestore/network problem cannot trap the UI on loading.
   state = readCachedState(user.uid) || defaultState();
+  timerState = loadTimerState(user.uid);
+  startTimerTicker();
   revealApp(user);
 
   // Sync from Firestore in the background. The UI is not blocked by this.
@@ -959,6 +1391,9 @@ function initApp(user) {
 
 function teardownApp() {
   state = defaultState();
+  applyTheme(state.config.theme);
+  clearInterval(timerTickHandle);
+  timerState = { status: "idle" };
   document.getElementById("board").hidden = true;
   document.getElementById("app-loading").hidden = true;
   document.getElementById("auth-screen").hidden = false;
@@ -1018,6 +1453,39 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { closeModal(); closeSettingsModal(); }
+    if (e.key === "Escape") { closeModal(); closeSettingsModal(); closeAppearanceModal(); }
+  });
+
+  // View switcher
+  document.querySelectorAll(".view-nav-btn").forEach(btn => {
+    btn.addEventListener("click", () => switchView(btn.dataset.view));
+  });
+
+  // Appearance / theme
+  document.getElementById("theme-btn").addEventListener("click", openAppearanceModal);
+  document.getElementById("appearance-close-btn").addEventListener("click", closeAppearanceModal);
+  document.getElementById("appearance-done-btn").addEventListener("click", closeAppearanceModal);
+  document.getElementById("appearance-modal").addEventListener("click", (e) => {
+    if (e.target.id === "appearance-modal") closeAppearanceModal();
+  });
+  document.getElementById("theme-custom-input").addEventListener("input", (e) => {
+    selectCustomTheme(e.target.value);
+  });
+  document.getElementById("theme-reset-btn").addEventListener("click", () => selectThemePreset("blueprint"));
+
+  // Flowmodoro timer
+  document.getElementById("timer-start-btn").addEventListener("click", handleTimerStart);
+  document.getElementById("timer-end-focus-btn").addEventListener("click", handleTimerEndFocus);
+  document.getElementById("timer-discard-btn").addEventListener("click", handleTimerDiscard);
+  document.getElementById("timer-skip-rest-btn").addEventListener("click", handleTimerSkipRest);
+  document.getElementById("timer-add-min-btn").addEventListener("click", handleTimerAddMinute);
+  document.getElementById("timer-ratio").addEventListener("input", (e) => {
+    document.getElementById("ratio-value").textContent = e.target.value;
+  });
+  document.getElementById("timer-ratio").addEventListener("change", (e) => {
+    if (timerState.status === "idle") {
+      state.config.flowmodoro.ratio = Number(e.target.value) || 5;
+      saveState();
+    }
   });
 });

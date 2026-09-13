@@ -71,11 +71,20 @@
       <div class="topbar-right">
         <span id="account-email" class="date-chip"></span>
         <span id="today-date" class="date-chip"></span>
+        <button id="theme-btn" class="link-btn" type="button">Theme</button>
         <button id="settings-btn" class="link-btn" type="button">Plan settings</button>
         <button id="edit-name-btn" class="link-btn" type="button">Set your name</button>
         <button id="sign-out-btn" class="link-btn" type="button">Sign out</button>
       </div>
     </header>
+
+    <!-- View switcher -->
+    <nav class="view-nav" id="view-nav" aria-label="Sections">
+      <button type="button" class="view-nav-btn is-active" data-view="dashboard">Dashboard</button>
+      <button type="button" class="view-nav-btn" data-view="timer">Focus Timer</button>
+    </nav>
+
+  <div id="view-dashboard" class="view-panel">
 
     <!-- Hero: countdown -->
     <section class="hero">
@@ -238,7 +247,59 @@
       </section>
 
     </main>
-  </div>
+  </div><!-- /view-dashboard -->
+
+  <div id="view-timer" class="view-panel" hidden>
+
+    <section class="card timer-card" style="--spine: var(--cyan)">
+      <div class="card-head">
+        <h2>Flowmodoro timer</h2>
+        <span id="timer-mode-pill" class="pill">Ready</span>
+      </div>
+      <p class="muted small timer-intro">Focus for as long as it flows. When you stop, you earn a break sized to the work you just did.</p>
+
+      <div class="timer-display-wrap">
+        <div id="timer-display" class="timer-display">00:00</div>
+        <div id="timer-sublabel" class="timer-sublabel">Tap start when you're ready</div>
+      </div>
+
+      <div class="timer-controls" id="timer-idle-controls">
+        <label class="field timer-subject-field">
+          <span>What are you focusing on?</span>
+          <select id="timer-subject"></select>
+        </label>
+        <button id="timer-start-btn" class="btn btn-primary timer-main-btn" type="button">Start focus</button>
+      </div>
+
+      <div class="timer-controls" id="timer-focus-controls" hidden>
+        <button id="timer-end-focus-btn" class="btn btn-primary timer-main-btn" type="button">End focus &amp; take a break</button>
+        <button id="timer-discard-btn" class="link-btn" type="button">Discard session</button>
+      </div>
+
+      <div class="timer-controls" id="timer-rest-controls" hidden>
+        <button id="timer-skip-rest-btn" class="btn btn-ghost timer-main-btn" type="button">Skip break</button>
+        <button id="timer-add-min-btn" class="link-btn" type="button">+1 min break</button>
+      </div>
+
+      <div class="timer-ratio-row">
+        <span class="focus-label">Break ratio — every 1 min of focus earns 1 ⁄ <span id="ratio-value">5</span> min of break</span>
+        <input type="range" id="timer-ratio" min="2" max="8" step="1" value="5" aria-label="Break ratio" />
+      </div>
+    </section>
+
+    <section class="card" style="--spine: var(--som)">
+      <div class="card-head">
+        <h2>Today's focus sessions</h2>
+        <span id="timer-today-total" class="pill pill-accent">0m focused</span>
+      </div>
+      <ul id="timer-session-list" class="activity-list">
+        <li class="muted small">No focus sessions logged yet today.</li>
+      </ul>
+    </section>
+
+  </div><!-- /view-timer -->
+
+  </div><!-- /board -->
 
   <!-- Log Study Modal -->
   <div id="log-modal" class="modal-overlay">
@@ -324,6 +385,26 @@
           <button type="submit" class="btn btn-primary">Save settings</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Appearance Modal -->
+  <div id="appearance-modal" class="modal-overlay">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="appearance-title">
+      <div class="modal-head">
+        <h2 id="appearance-title">Theme</h2>
+        <button id="appearance-close-btn" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted small" style="margin-top:0">Pick an accent, or choose your own colour. Applies instantly and syncs to your account.</p>
+      <div id="theme-swatches" class="theme-swatches"><!-- filled by JS --></div>
+      <label class="field theme-custom-field">
+        <span>Custom colour</span>
+        <input type="color" id="theme-custom-input" value="#79cbea" />
+      </label>
+      <div class="modal-actions">
+        <button type="button" id="theme-reset-btn" class="btn btn-ghost">Reset to default</button>
+        <button type="button" id="appearance-done-btn" class="btn btn-primary">Done</button>
+      </div>
     </div>
   </div>
 
