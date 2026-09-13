@@ -1,0 +1,15 @@
+{
+  "background_color": "#ffffff",
+  "dir": "ltr",
+  "display": "fullscreen",
+  "name": "padida parama",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "Padida parama",
+  "start_url": "/https://gate-study-dashboard-git-main-akash-f6a9.vercel.app/",
+  "theme_color": "#ffffff",
+  "id": "padida parama",
+  "categories": [
+    "productivity"
+  ]
+}
