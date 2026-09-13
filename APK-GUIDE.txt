@@ -1,0 +1,47 @@
+HOW TO GET A REAL .APK FROM THIS APP
+=====================================
+
+This app is now a proper installable PWA (manifest.json + service-worker.js +
+icons). That unlocks two ways to get it onto Android:
+
+OPTION A — Just "install" it (no APK needed, works today)
+-----------------------------------------------------------
+1. Deploy this folder to Vercel as usual (it must be served over HTTPS —
+   Vercel already gives you that).
+2. Open the site in Chrome on an Android phone.
+3. Tap the three-dot menu -> "Install app" (or you'll see an automatic
+   install banner). It installs like a native app: home-screen icon, its
+   own window, no browser bar.
+
+This is the easiest option and needs zero extra steps beyond redeploying.
+
+
+OPTION B — Get an actual signed .apk / .aab file
+-----------------------------------------------------------
+Use PWABuilder (free, made by Microsoft, no coding, no Android Studio):
+
+1. Deploy this updated folder to Vercel first — PWABuilder needs a live
+   HTTPS URL to read your manifest.json.
+2. Go to https://www.pwabuilder.com
+3. Paste your live URL (e.g. https://your-app.vercel.app) and click "Start".
+4. It will score your PWA (manifest + service worker + icons — this app
+   already has all three, so it should score well).
+5. Click "Package for stores" -> choose "Android".
+6. Download the generated .apk (for sideloading/testing) or .aab
+   (for uploading to the Google Play Store).
+7. Sideload the .apk on a phone (enable "Install unknown apps" for your
+   browser/file manager) or upload the .aab to Google Play Console if you
+   want to publish it properly.
+
+PWABuilder is just wrapping your existing site in a thin Android shell
+(a "Trusted Web Activity") — it still points at your live Vercel URL, so
+every time you redeploy the site, the installed app updates automatically
+without needing a new APK build.
+
+Notes:
+- Firebase Auth/Firestore need an internet connection either way — this
+  app was never designed to work fully offline, and the APK route doesn't
+  change that.
+- If you want a "real" native app with deeper OS integration (background
+  notifications, etc.), that's a much bigger rebuild (e.g. React Native /
+  Capacitor with native plugins) — not a small step up from this.
