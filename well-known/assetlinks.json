@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.gate_study_dashboard_git_main_akash_f6a9.twa",
+        "sha256_cert_fingerprints": ["84:A3:95:15:82:97:DD:85:A3:F4:1C:C4:5E:9D:FA:F1:91:8B:D5:00:25:0E:75:ED:C6:96:90:2C:F0:B8:EB:60"]
+      }
+    }]
