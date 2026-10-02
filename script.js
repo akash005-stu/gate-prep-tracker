@@ -11,6 +11,10 @@ const SUBJECT_META = {
 
 const STORAGE_KEY = "gate-tracker-state-v2";
 
+// Lets style.css hide .reveal cards until the entrance observer is running
+// (if this script ever failed to load, cards would simply stay visible).
+document.documentElement.classList.add("motion-ready");
+
 function defaultConfig() {
   return {
     subjects: {
@@ -406,6 +410,180 @@ function showToast(message) {
 }
 
 /* =========================================================
+   MOTION HELPERS
+   - whenVisible: run something the first time an element is on screen
+   - tween / setCount / setBar: numbers and bars that animate to a value
+   - observeReveals: cards rise once as they scroll in
+   All of it is skipped when the OS asks for reduced motion.
+   ========================================================= */
+const REDUCED_MOTION = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+const HAS_IO = "IntersectionObserver" in window;
+
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+const easeOutExpo = t => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t));
+
+/* Returns a cancel function. */
+function tween(from, to, ms, onUpdate, ease = easeOutExpo) {
+  let cancelled = false;
+  const start = performance.now();
+  function frame(now) {
+    if (cancelled) return;
+    const t = Math.min((now - start) / ms, 1);
+    onUpdate(from + (to - from) * ease(t), t);
+    if (t < 1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  return () => { cancelled = true; };
+}
+
+const visibleObserver = HAS_IO
+  ? new IntersectionObserver((entries, obs) => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        obs.unobserve(entry.target);
+        const fn = entry.target._whenVisible;
+        entry.target._whenVisible = null;
+        if (fn) fn();
+      });
+    }, { threshold: 0.25 })
+  : null;
+
+function whenVisible(el, fn) {
+  if (!el) return;
+  if (!visibleObserver || REDUCED_MOTION) { fn(); return; }
+  el._whenVisible = fn;
+  visibleObserver.observe(el);
+}
+
+/* Number that counts up/down to `to`. Starts when first on screen, then
+   animates from wherever it currently is on every later change. */
+function setCount(el, to, { format, ms = 1200 } = {}) {
+  if (!el) return;
+  const fmt = format || (v => String(Math.round(v)));
+  const prev = typeof el._cur === "number" ? el._cur : 0;
+  const run = () => {
+    el._armed = true;
+    if (el._cancel) el._cancel();
+    if (REDUCED_MOTION || prev === to) { el._cur = to; el.textContent = fmt(to); return; }
+    el._cancel = tween(prev, to, ms, v => { el._cur = v; el.textContent = fmt(v); });
+  };
+  if (el._armed) { run(); return; }
+  el.textContent = fmt(prev);
+  whenVisible(el, run);
+}
+
+/* Formatter that shows whole numbers for whole targets, one decimal for halves. */
+function countFormat(to, suffix = "") {
+  const whole = Math.abs(to - Math.round(to)) < 0.001;
+  return v => (whole ? String(Math.round(v)) : v.toFixed(1)) + suffix;
+}
+
+/* Progress bar fill: grows from empty the first time it is seen,
+   then glides to each new value. `extra` runs alongside the width change. */
+function setBar(fill, pct, extra) {
+  if (!fill) return;
+  const apply = () => {
+    fill._armed = true;
+    fill.style.width = `${pct}%`;
+    if (extra) extra();
+  };
+  if (fill._armed || REDUCED_MOTION || !visibleObserver) { apply(); return; }
+  whenVisible(fill.parentElement, () => setTimeout(apply, 280));
+}
+
+/* Cards rise once as they scroll into view */
+const revealObserver = HAS_IO
+  ? new IntersectionObserver((entries, obs) => {
+      let i = 0;
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        const el = entry.target;
+        obs.unobserve(el);
+        el.style.setProperty("--d", `${Math.min(i++, 5) * 90}ms`);
+        el.classList.add("in", "play");
+        const done = e => {
+          if (e.target !== el) return; // ignore child animations bubbling up
+          el.classList.remove("play");
+          el.removeEventListener("animationend", done);
+        };
+        el.addEventListener("animationend", done);
+      });
+    }, { threshold: 0.06, rootMargin: "0px 0px -4% 0px" })
+  : null;
+
+function observeReveals() {
+  document.querySelectorAll(".reveal:not(.in)").forEach(el => {
+    if (!revealObserver || REDUCED_MOTION) { el.classList.add("in"); return; }
+    if (!el._revealWatched) { el._revealWatched = true; revealObserver.observe(el); }
+  });
+  // Safety net: never leave a visible card hidden if the observer misses it
+  setTimeout(() => {
+    document.querySelectorAll(".reveal:not(.in)").forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.height > 0 && r.top < window.innerHeight) el.classList.add("in");
+    });
+  }, 2500);
+}
+
+/* Sliding underline under the active tab */
+function moveNavIndicator() {
+  const nav = document.getElementById("view-nav");
+  const ind = document.getElementById("nav-indicator");
+  const active = nav && nav.querySelector(".view-nav-btn.is-active");
+  if (!ind || !active || !active.offsetWidth) return;
+  ind.style.width = `${active.offsetWidth}px`;
+  ind.style.transform = `translateX(${active.offsetLeft}px)`;
+}
+
+/* Short confetti burst when the day's target is hit */
+function launchConfetti() {
+  if (REDUCED_MOTION) return;
+  const canvas = document.createElement("canvas");
+  canvas.className = "confetti";
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = window.innerWidth, H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--cyan").trim() || "#79CBEA";
+  const colors = ["#E85D3D", "#D99A2B", "#2FA792", accent, "#ffffff"];
+  const parts = Array.from({ length: 90 }, () => ({
+    x: W / 2 + (Math.random() - 0.5) * W * 0.3,
+    y: H * 0.6,
+    vx: (Math.random() - 0.5) * 14,
+    vy: -(8 + Math.random() * 10),
+    w: 6 + Math.random() * 6,
+    h: 4 + Math.random() * 5,
+    rot: Math.random() * 6.28,
+    vr: (Math.random() - 0.5) * 0.4,
+    color: colors[Math.floor(Math.random() * colors.length)],
+  }));
+
+  const DURATION = 2400;
+  const start = performance.now();
+  (function frame(now) {
+    const t = now - start;
+    ctx.clearRect(0, 0, W, H);
+    parts.forEach(p => {
+      p.vy += 0.38; p.vx *= 0.995;
+      p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha = Math.max(0, 1 - t / DURATION);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    });
+    if (t < DURATION) requestAnimationFrame(frame);
+    else canvas.remove();
+  })(start);
+}
+
+/* =========================================================
    VIEW SWITCHING — Dashboard vs. Focus Timer
    ========================================================= */
 function switchView(view) {
@@ -415,6 +593,7 @@ function switchView(view) {
     btn.classList.toggle("is-active", btn.dataset.view === view);
   });
   if (view === "timer") renderTimerSessionList();
+  moveNavIndicator();
 }
 
 /* =========================================================
@@ -714,6 +893,7 @@ function openModalFromTimerSession(session) {
    ========================================================= */
 function render() {
   renderHero();
+  renderGoal();
   renderTodayFocus();
   renderDayStrip();
   renderOverallProgress();
@@ -722,6 +902,7 @@ function render() {
   renderPace();
   renderActivity();
   if (!document.getElementById("plan-section").hidden) renderPlanTable();
+  observeReveals();
 }
 
 function renderHero() {
@@ -732,7 +913,7 @@ function renderHero() {
 
   const today = todayDate();
   const daysLeft = Math.max(Math.round((mainTargetDate() - today) / DAY_MS), 0);
-  document.getElementById("days-left").textContent = daysLeft;
+  setCount(document.getElementById("days-left"), daysLeft, { ms: 1600 });
 
   const wIndex = weekIndexFor(today);
   const targetLabel = mainTargetDate().toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
@@ -740,7 +921,9 @@ function renderHero() {
     `You're aiming for ${targetLabel}. That puts you in week ${wIndex} of ${totalWeeks()}.`;
 
   const streak = currentStreak();
-  document.getElementById("streak-pill").textContent = `${streak} day streak`;
+  const streakEl = document.getElementById("streak-pill");
+  streakEl.textContent = `${streak} day streak`;
+  streakEl.classList.toggle("streak-hot", streak > 0);
   document.getElementById("tagline").textContent = streak > 0
     ? "Keep the streak alive — today's work is all that's in front of you."
     : "A fresh start today. One session is all it takes to get going.";
@@ -750,6 +933,278 @@ function renderHero() {
   });
 
   document.getElementById("edit-name-btn").textContent = state.userName ? "Edit name" : "Set your name";
+}
+
+/* =========================================================
+   GOAL TRACKER — how far behind (or ahead of) the plan you are
+   "Plan" = the daily targets (weekday / weekend) summed from the
+   plan start through today. Lag = what the plan says you should
+   have finished by tonight minus what you have actually logged.
+   ========================================================= */
+function nextDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1); }
+
+function fmtNum(n) {
+  const r = Math.round(n * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+}
+
+function plural(n, word) { return `${word}${Math.abs(n - 1) < 0.001 ? "" : "s"}`; }
+
+function fmtDate(d) {
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+/* Lectures the daily targets add up to, from plan start through today */
+function plannedLecturesByToday() {
+  const start = planStart();
+  const today = todayDate();
+  if (today < start) return 0;
+  const end = today < planCutoff() ? today : planCutoff();
+  let sum = 0;
+  for (let d = start; d <= end; d = nextDay(d)) sum += dailyTarget(d);
+  return sum;
+}
+
+function computeGoalStatus() {
+  const cd = courseData();
+  const keys = Object.keys(cd);
+  const total = keys.reduce((s, k) => s + cd[k].total, 0);
+  const done = totalCompleted();
+  const remaining = Math.max(total - done, 0);
+  const today = todayDate();
+  const started = today >= planStart();
+  const expected = Math.min(plannedLecturesByToday(), total);
+  const lag = expected - done;                 // > 0 behind, < 0 ahead
+  const weeklySum = totalWeeklyTarget();
+  const complete = total > 0 && done >= total;
+
+  const subjects = keys.map(k => {
+    const share = weeklySum > 0 ? cd[k].weeklyTarget / weeklySum : 0;
+    const exp = Math.min(Math.round(expected * share * 2) / 2, cd[k].total);
+    const d = completedForSubject(k);
+    return { key: k, meta: cd[k], expected: exp, done: d, lag: exp - d };
+  });
+
+  let status = "good";
+  if (complete) status = "good";
+  else if (!started) status = "idle";
+  else if (lag > 0.0001) status = lag <= 3 ? "warn" : "danger";
+
+  return {
+    total, done, remaining, expected, lag, started, complete, status, subjects,
+    daysLeft: Math.round((mainTargetDate() - today) / DAY_MS),
+    daysToStart: Math.max(Math.round((planStart() - today) / DAY_MS), 0),
+  };
+}
+
+const GAUGE_RADIUS = 64;
+const GAUGE_C = 2 * Math.PI * GAUGE_RADIUS;
+const gaugeAnim = { a: 0 };
+
+/* a = share of today's plan you have finished (0..1). The unfinished
+   remainder of the ring is hatched, like a cut surface on a drawing. */
+function drawGauge(a, showGap) {
+  const fill = document.getElementById("gauge-fill");
+  const gap = document.getElementById("gauge-gap");
+  if (!fill || !gap) return;
+  fill.setAttribute("stroke-dasharray", `${a * GAUGE_C} ${GAUGE_C}`);
+  fill.style.opacity = a <= 0.0005 ? 0 : 1;
+  const gapLen = showGap ? (1 - a) * GAUGE_C : 0;
+  gap.setAttribute("stroke-dasharray", `${gapLen} ${GAUGE_C}`);
+  gap.setAttribute("stroke-dashoffset", String(-a * GAUGE_C));
+}
+
+function animateGauge(toA, showGap) {
+  const el = document.getElementById("gauge");
+  if (!el) return;
+  const run = () => {
+    el._armed = true;
+    const from = gaugeAnim.a;
+    if (el._cancel) el._cancel();
+    if (REDUCED_MOTION || Math.abs(from - toA) < 0.0001) {
+      gaugeAnim.a = toA;
+      drawGauge(toA, showGap);
+      return;
+    }
+    el._cancel = tween(from, toA, 1600, v => { gaugeAnim.a = v; drawGauge(v, showGap); });
+  };
+  if (el._armed) { run(); return; }
+  drawGauge(0, false);
+  whenVisible(el, () => setTimeout(run, 350));
+}
+
+function setStat(id, text, subId, subText, subClass) {
+  const el = document.getElementById(id);
+  if (el) { el._armed = false; el._cur = undefined; el.textContent = text; }
+  if (subId) {
+    const sub = document.getElementById(subId);
+    if (sub) { sub.textContent = subText || ""; sub.className = subClass || ""; }
+  }
+}
+
+function renderGoal() {
+  const card = document.getElementById("goal-card");
+  if (!card) return;
+  const g = computeGoalStatus();
+  const today = todayDate();
+  const planPace = totalWeeklyTarget() / 7;
+
+  card.classList.remove("goal-good", "goal-warn", "goal-danger", "goal-idle");
+  card.classList.add(`goal-${g.status}`);
+
+  // Headline
+  const headline = document.getElementById("goal-headline");
+  const targetLabel = mainTargetDate().toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+  headline.textContent = g.daysLeft > 0
+    ? `Ultimate goal: finish all ${g.total} lectures by ${targetLabel}, ${g.daysLeft} ${plural(g.daysLeft, "day")} from now.`
+    : `Ultimate goal: finish all ${g.total} lectures by ${targetLabel}.`;
+
+  // Pill + centre of the gauge
+  const pill = document.getElementById("goal-pill");
+  pill.classList.remove("pill-good", "pill-warn", "pill-bad");
+  const numEl = document.getElementById("goal-lag-num");
+  const labelEl = document.getElementById("goal-lag-label");
+  let centerValue = 0, centerLabel = "", pillText = "";
+
+  if (g.complete) {
+    pillText = "Goal complete"; pill.classList.add("pill-good");
+    centerValue = g.done; centerLabel = `of ${g.total} lectures done`;
+  } else if (!g.started) {
+    pillText = "Plan not started";
+    centerValue = g.daysToStart; centerLabel = `${plural(g.daysToStart, "day")} until your plan starts`;
+  } else if (g.lag > 0.0001) {
+    pillText = g.status === "warn" ? "Slightly behind" : "Behind schedule";
+    pill.classList.add(g.status === "warn" ? "pill-warn" : "pill-bad");
+    centerValue = g.lag; centerLabel = `${plural(g.lag, "lecture")} behind`;
+  } else if (g.lag < -0.0001) {
+    pillText = "Ahead of plan"; pill.classList.add("pill-good");
+    centerValue = -g.lag; centerLabel = `${plural(-g.lag, "lecture")} ahead`;
+  } else {
+    pillText = "On schedule"; pill.classList.add("pill-good");
+    centerValue = 0; centerLabel = "right on schedule";
+  }
+  pill.textContent = pillText;
+  labelEl.textContent = centerLabel;
+  setCount(numEl, centerValue, { format: countFormat(centerValue), ms: 1500 });
+
+  // Ring: share of today's plan that is done
+  const adherence = g.expected > 0 ? g.done / g.expected : (g.started ? 1 : 0);
+  const showGap = g.started && !g.complete && g.lag > 0.0001;
+  animateGauge(Math.min(adherence, 1), showGap);
+
+  // Stat tiles
+  const adhEl = document.getElementById("goal-adherence");
+  if (g.started && g.expected > 0) {
+    const adhPct = Math.round(adherence * 100);
+    setCount(adhEl, adhPct, { format: v => `${Math.round(v)}%` });
+    document.getElementById("goal-adherence-sub").textContent = g.done > g.expected + 0.0001 ? "of the plan so far, and more" : "of the plan so far";
+  } else {
+    setStat("goal-adherence", "—", "goal-adherence-sub", g.started ? "" : "starts with your plan");
+  }
+  setCount(document.getElementById("goal-expected"), g.expected, { format: countFormat(g.expected) });
+  setCount(document.getElementById("goal-done"), g.done, { format: countFormat(g.done) });
+  setCount(document.getElementById("goal-left"), g.remaining, { format: countFormat(g.remaining) });
+  document.getElementById("goal-done-sub").textContent = `of ${g.total} in total`;
+  document.getElementById("goal-left-sub").textContent = g.remaining > 0 ? plural(g.remaining, "lecture") : "nothing left";
+
+  // Pace needed to hit the target date
+  const needEl = document.getElementById("goal-need");
+  if (g.remaining <= 0) {
+    setStat("goal-need", "Done", "goal-need-sub", "every lecture finished", "good");
+  } else if (g.daysLeft <= 0) {
+    setStat("goal-need", "Overdue", "goal-need-sub", "target date has passed", "bad");
+  } else {
+    const need = g.remaining / g.daysLeft;
+    const above = need > planPace + 0.05;
+    setCount(needEl, need, { format: v => `${v.toFixed(1)}/day` });
+    const sub = document.getElementById("goal-need-sub");
+    sub.textContent = above
+      ? `above the ${planPace.toFixed(1)}/day plan`
+      : `within the ${planPace.toFixed(1)}/day plan`;
+    sub.className = above ? "bad" : "good";
+  }
+
+  // Where the current pace lands you
+  if (g.remaining <= 0) {
+    setStat("goal-proj", "Done", "goal-proj-sub", "all lectures finished", "good");
+  } else if (!g.started) {
+    setStat("goal-proj", "—", "goal-proj-sub", "starts with your plan");
+  } else if (g.done <= 0) {
+    setStat("goal-proj", "—", "goal-proj-sub", "log a lecture to see");
+  } else {
+    const elapsed = Math.max(Math.round((today - planStart()) / DAY_MS) + 1, 1);
+    const pace = g.done / elapsed;
+    const finish = new Date(today.getFullYear(), today.getMonth(), today.getDate() + Math.ceil(g.remaining / pace));
+    const diff = Math.round((mainTargetDate() - finish) / DAY_MS);
+    setStat("goal-proj", fmtDate(finish), "goal-proj-sub",
+      diff >= 0
+        ? `${diff} ${plural(diff, "day")} before the target`
+        : `${-diff} ${plural(-diff, "day")} after the target`,
+      diff >= 0 ? "good" : "bad");
+  }
+
+  renderGoalSubjects(g);
+
+  // Plain-language next step
+  const note = document.getElementById("goal-catchup");
+  if (g.complete) {
+    note.textContent = "Every lecture is done. The goal is complete.";
+  } else if (!g.started) {
+    note.textContent = `Your plan begins on ${planStart().toLocaleDateString(undefined, { day: "numeric", month: "long" })}. Nothing is owed yet.`;
+  } else if (g.lag > 0.0001) {
+    // A realistic window: small gaps in a week, big ones spread over more time
+    const horizon = g.lag <= 14 ? { days: 7, label: "a week" }
+      : g.lag <= 35 ? { days: 14, label: "two weeks" }
+      : { days: 28, label: "four weeks" };
+    const perDay = Math.ceil((g.lag / horizon.days) * 2) / 2;
+    const worst = g.subjects.filter(x => x.lag > 0).sort((a, b) => b.lag - a.lag)[0];
+    note.textContent =
+      `To clear the ${fmtNum(g.lag)}-lecture gap in ${horizon.label}, add about ${fmtNum(perDay)} extra ${plural(perDay, "lecture")} a day on top of the daily target.` +
+      (worst ? ` ${worst.meta.short} has the biggest gap (${fmtNum(worst.lag)}).` : "");
+  } else if (g.lag < -0.0001) {
+    const cushion = -g.lag / Math.max(planPace, 0.1);
+    note.textContent = `You're ${fmtNum(-g.lag)} ${plural(-g.lag, "lecture")} ahead of plan, about ${cushion.toFixed(1)} ${cushion.toFixed(1) === "1.0" ? "day" : "days"} of cushion.`;
+  } else {
+    note.textContent = "Right on plan. Hit today's target and you stay there.";
+  }
+}
+
+/* One thick bar per subject: full = on schedule. Whatever is not filled is the gap. */
+function renderGoalSubjects(g) {
+  const wrap = document.getElementById("goal-subjects");
+  g.subjects.forEach(sub => {
+    const c = sub.meta;
+    let row = wrap.querySelector(`[data-subject="${sub.key}"]`);
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "goal-sub";
+      row.dataset.subject = sub.key;
+      row.style.setProperty("--bar", c.color);
+      row.innerHTML = `
+        <div class="goal-sub-head"><span data-f="name"></span><span class="goal-sub-tag" data-f="tag"></span></div>
+        <div class="ruler-track goal-track"><div class="goal-gap" data-f="gap"></div><div class="ruler-fill"></div></div>
+        <div class="goal-sub-foot"><span data-f="done"></span><span data-f="plan"></span><span data-f="total"></span></div>
+      `;
+      wrap.appendChild(row);
+    }
+    const f = name => row.querySelector(`[data-f="${name}"]`);
+    f("name").textContent = c.name;
+    f("done").textContent = `${fmtNum(sub.done)} done`;
+    f("plan").textContent = g.started ? `plan: ${fmtNum(sub.expected)}` : "plan not started";
+    f("total").textContent = `${c.total} total`;
+
+    const tag = f("tag");
+    tag.classList.remove("lag", "ahead");
+    if (!g.started) tag.textContent = "not started";
+    else if (sub.lag > 0.0001) { tag.textContent = `${fmtNum(sub.lag)} behind`; tag.classList.add("lag"); }
+    else if (sub.lag < -0.0001) { tag.textContent = `${fmtNum(-sub.lag)} ahead`; tag.classList.add("ahead"); }
+    else { tag.textContent = "on plan"; }
+
+    const behind = g.started && sub.lag > 0.0001;
+    f("gap").classList.toggle("is-clear", !behind);
+    const pct = sub.expected > 0 ? Math.min((sub.done / sub.expected) * 100, 100) : (g.started ? 100 : 0);
+    setBar(row.querySelector(".ruler-fill"), pct);
+  });
 }
 
 function renderTodayFocus() {
@@ -765,7 +1220,7 @@ function renderTodayFocus() {
   document.getElementById("focus-remaining").textContent = remaining > 0
     ? `${remaining} lecture${remaining !== 1 ? "s" : ""}`
     : "All done";
-  document.getElementById("focus-progress-fill").style.width = `${pct}%`;
+  setBar(document.getElementById("focus-progress-fill"), pct);
 
   // Suggested subjects (editable)
   const cd = courseData();
@@ -796,6 +1251,7 @@ function renderTodayFocus() {
     state.celebratedDates.push(todayStr);
     saveState();
     showToast("Today's target is done. Nice work — that's a wrap for today.");
+    launchConfetti();
   }
 }
 
@@ -812,6 +1268,7 @@ function renderDayStrip() {
 
     const cell = document.createElement("div");
     cell.className = "day-cell";
+    cell.style.setProperty("--i", 6 - i);
     const boxClass = i === 0
       ? (done >= target ? "hit today" : done > 0 ? "partial today" : "today")
       : (done >= target ? "hit" : done > 0 ? "partial" : "");
@@ -820,6 +1277,15 @@ function renderDayStrip() {
       <span class="lbl">${d.toLocaleDateString(undefined, { weekday: "narrow" })}</span>
     `;
     strip.appendChild(cell);
+  }
+
+  // The boxes pop in one after another, once, the first time the strip is on screen
+  if (!strip._played) {
+    strip._played = true;
+    whenVisible(strip, () => {
+      strip.classList.add("play");
+      setTimeout(() => strip.classList.remove("play"), 1500);
+    });
   }
 }
 
@@ -830,8 +1296,8 @@ function renderOverallProgress() {
   const remaining = Math.max(total - completed, 0);
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-  document.getElementById("overall-pct").textContent = `${pct}%`;
-  document.getElementById("overall-progress-fill").style.width = `${pct}%`;
+  setCount(document.getElementById("overall-pct"), pct, { format: v => `${Math.round(v)}%` });
+  setBar(document.getElementById("overall-progress-fill"), pct);
 
   const list = document.getElementById("overall-breakdown");
   list.innerHTML = "";
@@ -853,9 +1319,7 @@ function renderSubjectCards() {
   const wStart = weekStartFor(wIndex);
   const wEnd = weekEndFor(wIndex);
   const cd = courseData();
-
   const grid = document.getElementById("subject-grid");
-  grid.innerHTML = "";
 
   Object.keys(cd).forEach(key => {
     const c = cd[key];
@@ -863,32 +1327,46 @@ function renderSubjectCards() {
     const remaining = Math.max(c.total - completed, 0);
     const pct = c.total > 0 ? Math.round((completed / c.total) * 100) : 0;
     const weekDone = subjectDoneInRange(key, wStart, wEnd);
-    const badge = pct >= 100 ? `<span class="subject-badge">cleared</span>` : "";
 
-    const card = document.createElement("div");
-    card.className = "subject-card";
-    card.style.setProperty("--subject-color", c.color);
-    card.innerHTML = `
-      <div class="subject-card-head">
-        <div>
-          <h3>${c.name}${badge}</h3>
-          <span class="subject-abbr">${c.short}</span>
+    // Cards are created once and then updated, so bars and counters glide
+    // to new values instead of restarting every time the dashboard refreshes.
+    let card = grid.querySelector(`[data-subject="${key}"]`);
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "subject-card reveal";
+      card.dataset.subject = key;
+      card.style.setProperty("--subject-color", c.color);
+      card.style.setProperty("--bar", c.color);
+      card.innerHTML = `
+        <div class="subject-card-head">
+          <div>
+            <h3 data-f="name"></h3>
+            <span class="subject-abbr" data-f="abbr"></span>
+          </div>
+          <span class="subject-pct" data-f="pct">0%</span>
         </div>
-        <span class="subject-pct">${pct}%</span>
-      </div>
-      <div class="ruler-track">
-        <div class="ruler-fill" style="width:${pct}%; background:${c.color}"></div>
-      </div>
-      <div class="subject-stats">
-        <div><strong>${completed}</strong>Completed</div>
-        <div><strong>${remaining}</strong>Remaining</div>
-      </div>
-      <div class="subject-week">
-        <span>Weekly target: ${c.weeklyTarget}</span>
-        <span>This week: ${weekDone} / ${c.weeklyTarget}</span>
-      </div>
-    `;
-    grid.appendChild(card);
+        <div class="ruler-track"><div class="ruler-fill"></div></div>
+        <div class="subject-stats">
+          <div><strong data-f="completed"></strong>Completed</div>
+          <div><strong data-f="remaining"></strong>Remaining</div>
+        </div>
+        <div class="subject-week">
+          <span data-f="weekly"></span>
+          <span data-f="thisweek"></span>
+        </div>
+      `;
+      grid.appendChild(card);
+    }
+
+    const f = name => card.querySelector(`[data-f="${name}"]`);
+    f("name").innerHTML = `${c.name}${pct >= 100 ? `<span class="subject-badge">cleared</span>` : ""}`;
+    f("abbr").textContent = c.short;
+    f("completed").textContent = completed;
+    f("remaining").textContent = remaining;
+    f("weekly").textContent = `Weekly target: ${c.weeklyTarget}`;
+    f("thisweek").textContent = `This week: ${weekDone} / ${c.weeklyTarget}`;
+    setCount(f("pct"), pct, { format: v => `${Math.round(v)}%` });
+    setBar(card.querySelector(".ruler-fill"), pct);
   });
 }
 
@@ -906,25 +1384,32 @@ function renderWeekCard() {
   document.getElementById("week-label").textContent = `Week ${wIndex} of ${totalWeeks()}`;
   document.getElementById("week-fraction").textContent = `${weekDone} / ${target}`;
   document.getElementById("week-pct").textContent = `${pct}%`;
-  document.getElementById("week-progress-fill").style.width = `${pct}%`;
+  setBar(document.getElementById("week-progress-fill"), pct);
   document.getElementById("week-left").textContent = left > 0
     ? `${left} lecture${left !== 1 ? "s" : ""} left this week`
     : "Weekly target complete";
 
   const rows = document.getElementById("week-subject-rows");
-  rows.innerHTML = "";
   Object.keys(cd).forEach(key => {
     const c = cd[key];
     const done = subjectDoneInRange(key, wStart, wEnd);
-    const subPct = Math.min(Math.round((done / c.weeklyTarget) * 100), 100);
-    const row = document.createElement("div");
-    row.className = "week-subject-row";
-    row.innerHTML = `
-      <span>${c.short}</span>
-      <span class="track"><span class="track-fill" style="width:${subPct}%; background:${c.color}"></span></span>
-      <span class="count">${done} / ${c.weeklyTarget}</span>
-    `;
-    rows.appendChild(row);
+    const subPct = c.weeklyTarget > 0 ? Math.min(Math.round((done / c.weeklyTarget) * 100), 100) : 0;
+
+    let row = rows.querySelector(`[data-subject="${key}"]`);
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "week-subject-row";
+      row.dataset.subject = key;
+      row.style.setProperty("--bar", c.color);
+      row.innerHTML = `
+        <span>${c.short}</span>
+        <div class="track"><div class="ruler-fill"></div></div>
+        <span class="count"></span>
+      `;
+      rows.appendChild(row);
+    }
+    row.querySelector(".count").textContent = `${done} / ${c.weeklyTarget}`;
+    setBar(row.querySelector(".ruler-fill"), subPct);
   });
 }
 
@@ -1315,6 +1800,7 @@ function revealApp(user) {
   loading.hidden = true;
   authScreen.hidden = true;
   board.hidden = false;
+  requestAnimationFrame(moveNavIndicator);
   document.getElementById("account-email").textContent = user.email || "";
   applyTheme(state.config.theme);
 
@@ -1414,6 +1900,11 @@ auth.onAuthStateChanged(user => {
    ========================================================= */
 document.addEventListener("DOMContentLoaded", () => {
   wireLectureMinutesSync();
+
+  // Motion: card entrances + sliding tab underline
+  observeReveals();
+  window.addEventListener("resize", moveNavIndicator);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveNavIndicator);
 
   document.getElementById("tab-login").addEventListener("click", () => setAuthMode("login"));
   document.getElementById("tab-signup").addEventListener("click", () => setAuthMode("signup"));

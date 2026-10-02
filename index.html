@@ -28,6 +28,11 @@
 </head>
 <body>
 
+  <!-- Ambient background: drifting glows behind the blueprint grid -->
+  <div class="bg-orb o1" aria-hidden="true"></div>
+  <div class="bg-orb o2" aria-hidden="true"></div>
+  <div class="bg-orb o3" aria-hidden="true"></div>
+
   <!-- Auth gate — shown until signed in -->
   <div id="auth-screen" class="auth-screen">
     <div class="auth-card">
@@ -37,7 +42,7 @@
           <line x1="12" y1="2.5" x2="12" y2="6" stroke="currentColor" stroke-width="1.4"/>
           <line x1="12" y1="18" x2="12" y2="21.5" stroke="currentColor" stroke-width="1.4"/>
           <circle cx="12" cy="12" r="1.6" fill="currentColor"/>
-          <line x1="12" y1="12" x2="16.5" y2="8" stroke="currentColor" stroke-width="1.4"/>
+          <line class="compass-needle" x1="12" y1="12" x2="16.5" y2="8" stroke="currentColor" stroke-width="1.4"/>
         </svg>
         <span>GATE Drafting Log</span>
       </div>
@@ -75,7 +80,7 @@
           <line x1="12" y1="2.5" x2="12" y2="6" stroke="currentColor" stroke-width="1.4"/>
           <line x1="12" y1="18" x2="12" y2="21.5" stroke="currentColor" stroke-width="1.4"/>
           <circle cx="12" cy="12" r="1.6" fill="currentColor"/>
-          <line x1="12" y1="12" x2="16.5" y2="8" stroke="currentColor" stroke-width="1.4"/>
+          <line class="compass-needle" x1="12" y1="12" x2="16.5" y2="8" stroke="currentColor" stroke-width="1.4"/>
         </svg>
         <span>GATE Drafting Log</span>
       </div>
@@ -93,12 +98,16 @@
     <nav class="view-nav" id="view-nav" aria-label="Sections">
       <button type="button" class="view-nav-btn is-active" data-view="dashboard">Dashboard</button>
       <button type="button" class="view-nav-btn" data-view="timer">Focus Timer</button>
+      <span class="view-nav-indicator" id="nav-indicator" aria-hidden="true"></span>
     </nav>
 
   <div id="view-dashboard" class="view-panel">
 
     <!-- Hero: countdown -->
     <section class="hero">
+      <div class="hero-orbit" aria-hidden="true">
+        <span class="ring r1"></span><span class="ring r2"></span><span class="ring r3"></span><span class="core"></span>
+      </div>
       <p id="greeting" class="hero-greeting">Good morning.</p>
       <div class="hero-countdown">
         <span class="tick-mark">⊢</span>
@@ -115,8 +124,49 @@
 
     <main>
 
+      <!-- Goal tracker: how far behind (or ahead of) the plan -->
+      <section class="card reveal card-goal" id="goal-card" style="--spine: var(--goal-color)">
+        <div class="card-head">
+          <h2>Goal tracker</h2>
+          <span id="goal-pill" class="pill">Checking…</span>
+        </div>
+        <p id="goal-headline" class="goal-headline">Loading your goal.</p>
+
+        <div class="goal-top">
+          <div class="gauge" id="gauge" role="img" aria-labelledby="goal-lag-num goal-lag-label">
+            <svg viewBox="0 0 160 160" aria-hidden="true">
+              <defs>
+                <pattern id="hatch" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+                  <rect width="9" height="9" style="fill:var(--bad-soft)"/>
+                  <rect width="3.5" height="9" style="fill:var(--bad)"/>
+                </pattern>
+              </defs>
+              <circle class="gauge-track" cx="80" cy="80" r="64" />
+              <circle class="gauge-gap" id="gauge-gap" cx="80" cy="80" r="64" transform="rotate(-90 80 80)" />
+              <circle class="gauge-fill" id="gauge-fill" cx="80" cy="80" r="64" transform="rotate(-90 80 80)" />
+            </svg>
+            <div class="gauge-center">
+              <span id="goal-lag-num" class="gauge-num">0</span>
+              <span id="goal-lag-label" class="gauge-label">lectures behind</span>
+            </div>
+          </div>
+
+          <dl class="goal-stats">
+            <div class="goal-stat"><dt>Plan adherence</dt><dd id="goal-adherence">—</dd><small id="goal-adherence-sub">of today's plan</small></div>
+            <div class="goal-stat"><dt>Plan says by tonight</dt><dd id="goal-expected">—</dd><small>lectures</small></div>
+            <div class="goal-stat"><dt>You've completed</dt><dd id="goal-done">—</dd><small id="goal-done-sub">lectures</small></div>
+            <div class="goal-stat"><dt>Left for the goal</dt><dd id="goal-left">—</dd><small id="goal-left-sub">lectures</small></div>
+            <div class="goal-stat"><dt>Pace needed</dt><dd id="goal-need">—</dd><small id="goal-need-sub"></small></div>
+            <div class="goal-stat"><dt>Finish at your pace</dt><dd id="goal-proj">—</dd><small id="goal-proj-sub"></small></div>
+          </dl>
+        </div>
+
+        <div id="goal-subjects" class="goal-subjects"><!-- filled by JS --></div>
+        <p id="goal-catchup" class="goal-catchup"></p>
+      </section>
+
       <!-- Today's Focus -->
-      <section class="card card-focus" style="--spine: var(--maths)">
+      <section class="card reveal card-focus" style="--spine: var(--maths)">
         <div class="card-head">
           <h2>Today's focus</h2>
         </div>
@@ -151,7 +201,7 @@
       </section>
 
       <!-- 7-day strip -->
-      <section class="card" style="--spine: var(--cyan)">
+      <section class="card reveal" style="--spine: var(--cyan)">
         <div class="card-head">
           <h2>Last 7 days</h2>
           <span class="muted small">Filled = target hit</span>
@@ -160,7 +210,7 @@
       </section>
 
       <!-- Overall Progress -->
-      <section class="card" style="--spine: var(--ink)">
+      <section class="card reveal" style="--spine: var(--ink)">
         <div class="card-head">
           <h2>Overall progress</h2>
           <span id="overall-pct" class="pill pill-accent">0%</span>
@@ -179,7 +229,7 @@
       </section>
 
       <!-- This Week -->
-      <section class="card" style="--spine: var(--ink)">
+      <section class="card reveal" style="--spine: var(--ink)">
         <div class="card-head">
           <h2>This week</h2>
           <span id="week-label" class="muted small">Week 1</span>
@@ -199,15 +249,15 @@
       </section>
 
       <!-- Pace / Catch-up -->
-      <section class="card card-pace" id="pace-card">
+      <section class="card reveal card-pace" id="pace-card">
         <div class="card-head">
-          <h2>Pace</h2>
+          <h2>Pace this week</h2>
         </div>
         <p id="pace-message" class="pace-message">Loading your pace.</p>
       </section>
 
       <!-- Recent Activity -->
-      <section class="card" style="--spine: var(--ink)">
+      <section class="card reveal" style="--spine: var(--ink)">
         <div class="card-head">
           <h2>Recent activity</h2>
           <button id="toggle-plan-btn" class="link-btn" type="button">View full plan</button>
@@ -218,7 +268,7 @@
       </section>
 
       <!-- Full plan (hidden by default) -->
-      <section class="card" id="plan-section" style="--spine: var(--ink)" hidden>
+      <section class="card reveal" id="plan-section" style="--spine: var(--ink)" hidden>
         <div class="card-head">
           <h2>Full study plan</h2>
           <span class="muted small" id="plan-range"></span>
@@ -242,7 +292,7 @@
       </section>
 
       <!-- Backup -->
-      <section class="card" style="--spine: var(--cyan)">
+      <section class="card reveal" style="--spine: var(--cyan)">
         <div class="card-head">
           <h2>Backup</h2>
         </div>
@@ -262,7 +312,7 @@
 
   <div id="view-timer" class="view-panel" hidden>
 
-    <section class="card timer-card" style="--spine: var(--cyan)">
+    <section class="card reveal timer-card" style="--spine: var(--cyan)">
       <div class="card-head">
         <h2>Flowmodoro timer</h2>
         <span id="timer-mode-pill" class="pill">Ready</span>
@@ -298,7 +348,7 @@
       </div>
     </section>
 
-    <section class="card" style="--spine: var(--som)">
+    <section class="card reveal" style="--spine: var(--som)">
       <div class="card-head">
         <h2>Today's focus sessions</h2>
         <span id="timer-today-total" class="pill pill-accent">0m focused</span>
