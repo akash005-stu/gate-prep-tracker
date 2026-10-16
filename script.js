@@ -28,6 +28,8 @@ function defaultConfig() {
     lectureLengthMin: 30,
     weekdayTarget: 2,
     weekendTarget: 6,
+    catchupThreshold: 40,     // re-balance the plan once this many lectures pile up
+    autoAdjust: true,         // re-balance automatically (otherwise a button is offered)
     flowmodoro: { ratio: 5 },
     theme: { preset: "blueprint", custom: false, hue: null },
   };
@@ -52,6 +54,10 @@ try {
 }
 
 let currentUser = null;
+// True once this account's saved data has been read from Firestore. Anything that
+// writes on its own (auto re-balance, leaderboard) waits for it, so a half-loaded
+// copy can never overwrite what is saved.
+let cloudReady = false;
 
 /* =========================================================
    STATE
@@ -68,7 +74,46 @@ function defaultState() {
     config: defaultConfig(),
     celebratedDates: [],      // dates we've already shown the "target hit" toast for
     timerSessions: [],        // {id, date, subject, focusSeconds, restSeconds, ratio, completedAt}
+    planAdjustments: [],      // catch-up re-balances, oldest first (see buildCatchupPlan)
+    autoAdjustPausedOn: null, // 'YYYY-MM-DD' — auto re-balance is skipped on this day (after an undo)
+    showOnLeaderboard: true,  // publish a public progress summary for the leaderboard tab
   };
+}
+
+/* Keep only well-formed catch-up adjustments (older/hand-edited backups can
+   hold anything), with every number coerced, sorted oldest first. */
+function sanitizeAdjustments(list) {
+  if (!Array.isArray(list)) return [];
+  const isoRe = /^\d{4}-\d{2}-\d{2}$/;
+  const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const out = [];
+  list.forEach(a => {
+    if (!a || typeof a !== "object") return;
+    if (typeof a.effectiveDate !== "string" || !isoRe.test(a.effectiveDate)) return;
+    if (!Number.isFinite(Number(a.weekdayTarget)) || !Number.isFinite(Number(a.weekendTarget))) return;
+    const weekly = {}, doneBefore = {};
+    Object.keys(SUBJECT_META).forEach(k => {
+      weekly[k] = num(a.weekly && a.weekly[k]);
+      doneBefore[k] = num(a.doneBefore && a.doneBefore[k]);
+    });
+    out.push({
+      id: num(a.id),
+      createdOn: typeof a.createdOn === "string" && isoRe.test(a.createdOn) ? a.createdOn : a.effectiveDate,
+      effectiveDate: a.effectiveDate,
+      anchorDone: num(a.anchorDone),
+      doneBefore,
+      forgive: Math.max(num(a.forgive), 0),
+      weekdayTarget: Math.max(num(a.weekdayTarget), 0),
+      weekendTarget: Math.max(num(a.weekendTarget), 0),
+      weekly,
+      lagCleared: num(a.lagCleared),
+      remaining: num(a.remaining),
+      finishDate: typeof a.finishDate === "string" && isoRe.test(a.finishDate) ? a.finishDate : a.effectiveDate,
+      heavy: !!a.heavy,
+    });
+  });
+  out.sort((x, y) => (x.effectiveDate < y.effectiveDate ? -1 : x.effectiveDate > y.effectiveDate ? 1 : x.id - y.id));
+  return out;
 }
 
 /* Merge any partial/saved object on top of a full default shape,
@@ -87,6 +132,9 @@ function mergeIntoDefaultState(parsed) {
     logs: Array.isArray(source.logs) ? source.logs : [],
     celebratedDates: Array.isArray(source.celebratedDates) ? source.celebratedDates : [],
     timerSessions: Array.isArray(source.timerSessions) ? source.timerSessions : [],
+    planAdjustments: sanitizeAdjustments(source.planAdjustments),
+    autoAdjustPausedOn: typeof source.autoAdjustPausedOn === "string" ? source.autoAdjustPausedOn : null,
+    showOnLeaderboard: source.showOnLeaderboard !== false,
     suggestedOverride:
       source.suggestedOverride && typeof source.suggestedOverride === "object"
         ? source.suggestedOverride
@@ -118,13 +166,15 @@ function saveState() {
     console.error("Could not save to your account.", e);
     showToast("Saved on this device, but couldn't sync to your account (check your connection).");
   });
+  scheduleLeaderboardPublish();
 }
 
 /* Merged course data: fixed meta + editable numbers */
 function courseData() {
   const out = {};
+  const today = todayDate();
   Object.keys(SUBJECT_META).forEach(key => {
-    out[key] = { ...SUBJECT_META[key], ...state.config.subjects[key] };
+    out[key] = { ...SUBJECT_META[key], ...state.config.subjects[key], weeklyTarget: weeklyTargetOn(key, today) };
   });
   return out;
 }
@@ -273,14 +323,54 @@ function planStart() { return toDateOnly(parseISODate(state.config.startDate)); 
 function planCutoff() { return toDateOnly(parseISODate(state.config.hardCutoff)); }
 function mainTargetDate() { return toDateOnly(parseISODate(state.config.mainTargetDate)); }
 function totalWeeks() { return Math.floor((planCutoff() - planStart()) / (7 * DAY_MS)) + 1; }
-function totalWeeklyTarget() {
-  return Object.values(state.config.subjects).reduce((s, c) => s + c.weeklyTarget, 0);
+
+/* ---------------------------------------------------------
+   CATCH-UP ADJUSTMENTS
+   When too many lectures pile up, the plan is re-balanced: a new
+   "adjustment" starts on that week's Monday with fresh daily and
+   weekly targets sized to the lectures that are actually left.
+   `anchorDone` is what was finished before that Monday, so from
+   then on "planned so far" = anchorDone + the new daily targets
+   (minus `forgive`, so the backlog reads as zero on day one).
+   The base plan in state.config is never overwritten.
+   --------------------------------------------------------- */
+function adjustments() {
+  return Array.isArray(state.planAdjustments) ? state.planAdjustments : [];
 }
 
-// Daily target: Mon–Fri use weekdayTarget, Sat/Sun use weekendTarget (both editable in Plan settings)
+/* The latest adjustment that has started by `date`, or null for the original plan */
+function adjustmentOn(date) {
+  const t = date.getTime();
+  let found = null;
+  adjustments().forEach(a => {
+    if (parseISODate(a.effectiveDate).getTime() <= t) found = a;
+  });
+  return found;
+}
+
+function weeklyTargetOn(key, date) {
+  const a = adjustmentOn(date);
+  if (a && a.weekly && Number.isFinite(Number(a.weekly[key]))) return Number(a.weekly[key]);
+  const cfg = state.config.subjects[key];
+  return cfg ? Number(cfg.weeklyTarget) || 0 : 0;
+}
+
+function totalWeeklyTargetOn(date) {
+  return Object.keys(SUBJECT_META).reduce((s, k) => s + weeklyTargetOn(k, date), 0);
+}
+
+function totalWeeklyTarget() {
+  return totalWeeklyTargetOn(todayDate());
+}
+
+// Daily target: Mon–Fri use the weekday target, Sat/Sun the weekend target.
+// Comes from the active catch-up adjustment if there is one, else from Plan settings.
 function dailyTarget(date) {
   const dow = date.getDay(); // 0 Sun ... 6 Sat
-  return (dow === 0 || dow === 6) ? state.config.weekendTarget : state.config.weekdayTarget;
+  const weekend = dow === 0 || dow === 6;
+  const a = adjustmentOn(date);
+  if (a) return weekend ? a.weekendTarget : a.weekdayTarget;
+  return weekend ? state.config.weekendTarget : state.config.weekdayTarget;
 }
 
 // Week index (1-based), clamped to [1, totalWeeks]
@@ -342,6 +432,11 @@ function expectedByDate(date) {
   let expected = 0;
   for (let d = new Date(wStart); d <= date; d = new Date(d.getTime() + DAY_MS)) {
     expected += dailyTarget(d);
+  }
+  // In the week a re-balance started, the days before it was made are forgiven
+  const adj = adjustmentOn(wStart);
+  if (adj && adj.effectiveDate === formatISODate(wStart)) {
+    expected = Math.max(expected - adj.forgive, 0);
   }
   return expected;
 }
@@ -589,10 +684,12 @@ function launchConfetti() {
 function switchView(view) {
   document.getElementById("view-dashboard").hidden = view !== "dashboard";
   document.getElementById("view-timer").hidden = view !== "timer";
+  document.getElementById("view-leaderboard").hidden = view !== "leaderboard";
   document.querySelectorAll(".view-nav-btn").forEach(btn => {
     btn.classList.toggle("is-active", btn.dataset.view === view);
   });
   if (view === "timer") renderTimerSessionList();
+  if (view === "leaderboard") enterLeaderboard(); else leaveLeaderboard();
   moveNavIndicator();
 }
 
@@ -892,7 +989,9 @@ function openModalFromTimerSession(session) {
    RENDERING
    ========================================================= */
 function render() {
+  maybeAutoRebalance();
   renderHero();
+  try { renderAdjustCard(); } catch (err) { console.error("Plan card failed:", err); }
   renderGoal();
   renderTodayFocus();
   renderDayStrip();
@@ -960,6 +1059,13 @@ function plannedLecturesByToday() {
   const today = todayDate();
   if (today < start) return 0;
   const end = today < planCutoff() ? today : planCutoff();
+  const adj = adjustmentOn(end);
+  if (adj) {
+    // After a catch-up re-balance: what was done before it, plus the new daily targets since
+    let sum = adj.anchorDone - adj.forgive;
+    for (let d = parseISODate(adj.effectiveDate); d <= end; d = nextDay(d)) sum += dailyTarget(d);
+    return Math.max(sum, 0);
+  }
   let sum = 0;
   for (let d = start; d <= end; d = nextDay(d)) sum += dailyTarget(d);
   return sum;
@@ -978,9 +1084,16 @@ function computeGoalStatus() {
   const weeklySum = totalWeeklyTarget();
   const complete = total > 0 && done >= total;
 
+  const activeAdj = started ? adjustmentOn(today < planCutoff() ? today : planCutoff()) : null;
   const subjects = keys.map(k => {
     const share = weeklySum > 0 ? cd[k].weeklyTarget / weeklySum : 0;
-    const exp = Math.min(Math.round(expected * share * 2) / 2, cd[k].total);
+    let exp;
+    if (activeAdj) {
+      const before = Number(activeAdj.doneBefore && activeAdj.doneBefore[k]) || 0;
+      exp = Math.min(Math.round((before + Math.max(expected - activeAdj.anchorDone, 0) * share) * 2) / 2, cd[k].total);
+    } else {
+      exp = Math.min(Math.round(expected * share * 2) / 2, cd[k].total);
+    }
     const d = completedForSubject(k);
     return { key: k, meta: cd[k], expected: exp, done: d, lag: exp - d };
   });
@@ -995,6 +1108,254 @@ function computeGoalStatus() {
     daysLeft: Math.round((mainTargetDate() - today) / DAY_MS),
     daysToStart: Math.max(Math.round((planStart() - today) / DAY_MS), 0),
   };
+}
+
+/* =========================================================
+   CATCH-UP RE-BALANCE
+   When the backlog (planned-so-far minus done) goes past the
+   limit (40 by default), the plan is re-based instead of leaving
+   a pile of "missed" lectures on screen. The lectures still left
+   are spread over the time that remains — with a 3-week cushion
+   before the target date — and new daily + weekly targets are
+   worked out from that. The original plan stays in Plan settings.
+   ========================================================= */
+const CATCHUP_CUSHION_DAYS = 21;
+
+function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+function isWeekendDay(d) { const x = d.getDay(); return x === 0 || x === 6; }
+
+function catchupThreshold() {
+  const t = Number(state.config.catchupThreshold);
+  return Number.isFinite(t) && t > 0 ? t : 40;
+}
+
+function autoAdjustEnabled() { return state.config.autoAdjust !== false; }
+
+/* Works out a re-balanced plan from today's position. Pure: changes nothing.
+   Returns null when there is nothing to plan (all done, or no days left). */
+function buildCatchupPlan() {
+  const today = todayDate();
+  if (today < planStart() || today > planCutoff()) return null;
+
+  // The new plan starts on this week's Monday so weekly numbers stay whole weeks
+  const monday = weekStartFor(weekIndexFor(today));
+  const mondayStr = formatISODate(monday);
+  const keys = Object.keys(SUBJECT_META);
+
+  const doneBefore = {};
+  const remainingBy = {};
+  let anchorDone = 0;
+  let remaining = 0;
+  keys.forEach(k => {
+    const before = state.logs
+      .filter(l => l.subject === k && l.date < mondayStr)
+      .reduce((s, l) => s + Number(l.lectures), 0);
+    doneBefore[k] = before;
+    anchorDone += before;
+    const left = Math.max(Number(state.config.subjects[k].total) - before, 0);
+    remainingBy[k] = left;
+    remaining += left;
+  });
+  if (remaining <= 0.0001) return null;
+
+  // Plan to finish a few weeks before the target date, leaving room for revision
+  let finish = addDays(mainTargetDate(), -CATCHUP_CUSHION_DAYS);
+  if (finish < addDays(monday, 20)) finish = mainTargetDate();
+  if (finish < addDays(monday, 13)) finish = planCutoff();
+  if (finish < addDays(monday, 6)) return null;
+
+  let wd = 0, we = 0;
+  for (let d = monday; d <= finish; d = nextDay(d)) {
+    if (isWeekendDay(d)) we++; else wd++;
+  }
+  if (wd + we === 0) return null;
+
+  // Keep the original weekend-to-weekday balance (2 vs 6 → 1:3 by default)
+  const cfg = state.config;
+  let ratio = Number(cfg.weekdayTarget) > 0 ? Number(cfg.weekendTarget) / Number(cfg.weekdayTarget) : 3;
+  if (!Number.isFinite(ratio)) ratio = 3;
+  ratio = Math.min(Math.max(ratio, 1), 5);
+
+  // Smallest weekday target (in half-lecture steps) that fits, then the smallest weekend target
+  let w = 0, e = 0, found = false;
+  for (let i = 1; i <= 60 && !found; i++) {
+    const wTry = i / 2;
+    const eCap = Math.max(Math.ceil(wTry * ratio * 2) / 2, wTry);
+    const eNeed = we > 0 ? (remaining - wd * wTry) / we : 0;
+    const eTry = Math.max(Math.ceil(eNeed * 2) / 2, wTry);
+    if (wd * wTry + we * eTry >= remaining - 1e-9 && eTry <= eCap) {
+      w = wTry; e = eTry; found = true;
+    }
+  }
+  if (!found) {
+    w = Math.max(Math.ceil((remaining / (wd + ratio * we)) * 2) / 2, 0.5);
+    e = Math.max(Math.ceil(w * ratio * 2) / 2, w);
+  }
+
+  // Weekly targets per subject, in proportion to what is left in each
+  const weeklyTotal = Math.ceil(5 * w + 2 * e - 1e-9);
+  const weekly = {};
+  const fracs = [];
+  let used = 0;
+  keys.forEach(k => {
+    const raw = weeklyTotal * remainingBy[k] / remaining;
+    const whole = Math.floor(raw + 1e-9);
+    weekly[k] = whole;
+    used += whole;
+    fracs.push({ k, frac: raw - whole });
+  });
+  fracs.sort((a, b) => b.frac - a.frac);
+  for (let i = 0; used < weeklyTotal && i < fracs.length; i++) {
+    if (remainingBy[fracs[i].k] > 0) { weekly[fracs[i].k]++; used++; }
+  }
+
+  // Day one of the new plan reads as "on schedule": forgive whatever this week's
+  // new targets would already say is owed.
+  let sinceMonday = 0;
+  for (let d = monday; d <= today; d = nextDay(d)) sinceMonday += isWeekendDay(d) ? e : w;
+  const doneSince = Math.max(totalCompleted() - anchorDone, 0);
+  const forgive = Math.max(sinceMonday - doneSince, 0);
+
+  return {
+    id: Date.now(),
+    createdOn: formatISODate(today),
+    effectiveDate: mondayStr,
+    anchorDone,
+    doneBefore,
+    forgive,
+    weekdayTarget: w,
+    weekendTarget: e,
+    weekly,
+    lagCleared: Math.round(Math.max(computeGoalStatus().lag, 0) * 10) / 10,
+    remaining,
+    finishDate: formatISODate(finish),
+    heavy: w > 5 || e > 12,   // more than is realistic: don't apply this on its own
+  };
+}
+
+function applyCatchupPlan(manual, given) {
+  const plan = given || buildCatchupPlan();
+  if (!plan) {
+    if (manual) showToast("Couldn't re-balance the plan. Check your target date in Plan settings.");
+    return false;
+  }
+  state.planAdjustments = sanitizeAdjustments(adjustments().concat([plan]));
+  state.autoAdjustPausedOn = null;
+  saveState();
+  showToast(`Fresh start: ${fmtNum(plan.lagCleared)} piled-up lectures folded into a new plan. ${fmtNum(plan.weekdayTarget)}/day on weekdays, ${fmtNum(plan.weekendTarget)}/day on weekends.`);
+  return true;
+}
+
+/* Runs at the start of every render. Only once the account has finished syncing,
+   so a half-loaded copy can never overwrite the saved data. */
+function maybeAutoRebalance() {
+  try {
+    if (!cloudReady || !currentUser || !autoAdjustEnabled()) return false;
+    if (state.autoAdjustPausedOn === formatISODate(todayDate())) return false;
+    const g = computeGoalStatus();
+    if (!g.started || g.complete || g.lag <= catchupThreshold()) return false;
+    // A plan that asks for an unrealistic load is never applied on its own: the
+    // card explains and suggests moving the target date instead.
+    const plan = buildCatchupPlan();
+    if (!plan || plan.heavy) return false;
+    return applyCatchupPlan(false, plan);
+  } catch (err) {
+    console.warn("Automatic plan re-balance skipped:", err);
+    return false;
+  }
+}
+
+function undoLastAdjustment() {
+  const list = adjustments();
+  if (!list.length) return;
+  state.planAdjustments = list.slice(0, -1);
+  state.autoAdjustPausedOn = formatISODate(todayDate());
+  saveState();
+  render();
+  showToast("Adjustment undone. Auto re-balance is paused until tomorrow.");
+}
+
+function adjustChipsHtml(p) {
+  const weeklySum = Object.keys(SUBJECT_META).reduce((s, k) => s + (Number(p.weekly[k]) || 0), 0);
+  const subs = Object.keys(SUBJECT_META).map(k => (
+    `<span class="adjust-chip adjust-chip-sub" style="--chip:${SUBJECT_META[k].color}"><i></i>${SUBJECT_META[k].short}<strong>${fmtNum(p.weekly[k])}/wk</strong></span>`
+  )).join("");
+  return `
+    <span class="adjust-chip"><small>Weekdays</small><strong>${fmtNum(p.weekdayTarget)}/day</strong></span>
+    <span class="adjust-chip"><small>Weekends</small><strong>${fmtNum(p.weekendTarget)}/day</strong></span>
+    <span class="adjust-chip"><small>Per week</small><strong>${fmtNum(weeklySum)}</strong></span>
+    <span class="adjust-chip"><small>Plan ends</small><strong>${fmtDate(parseISODate(p.finishDate))}</strong></span>
+    <div class="adjust-subs">${subs}</div>
+  `;
+}
+
+function renderAdjustCard() {
+  const card = document.getElementById("adjust-card");
+  if (!card) return;
+  const list = adjustments();
+  const last = list.length ? list[list.length - 1] : null;
+  const g = computeGoalStatus();
+  const limit = catchupThreshold();
+  const overLimit = g.started && !g.complete && g.lag > limit;
+
+  const pill = document.getElementById("adjust-pill");
+  const title = document.getElementById("adjust-title");
+  const summary = document.getElementById("adjust-summary");
+  const chips = document.getElementById("adjust-chips");
+  const note = document.getElementById("adjust-note");
+  const actionBtn = document.getElementById("adjust-action-btn");
+  const undoBtn = document.getElementById("adjust-undo-btn");
+
+  if (!last && !overLimit) { card.hidden = true; return; }
+  card.hidden = false;
+  pill.classList.remove("pill-good", "pill-warn");
+
+  if (overLimit) {
+    // Over the limit but not re-balanced (auto-adjust off, paused, or still syncing)
+    const preview = buildCatchupPlan();
+    title.textContent = `Backlog is over ${limit}`;
+    pill.textContent = "Ready for a reset";
+    pill.classList.add("pill-warn");
+    summary.textContent = `${fmtNum(g.lag)} lectures have piled up. You don't have to carry them as a debt: re-balancing spreads what is left across the time you have, with fresh daily and weekly targets.`;
+    chips.innerHTML = preview ? adjustChipsHtml(preview) : "";
+    if (!preview) {
+      note.textContent = "Your target date leaves too little room to plan. Move it later in Plan settings and try again.";
+    } else if (preview.heavy) {
+      note.textContent = `Squeezing everything in before the target date would mean ${fmtNum(preview.weekdayTarget)} lectures a day on weekdays, which is more than is realistic. Move the target date later in Plan settings, then re-balance.`;
+    } else {
+      note.textContent = "Nothing is lost. Your logged lectures stay exactly as they are.";
+    }
+    actionBtn.textContent = preview && preview.heavy ? "Re-balance anyway" : "Re-balance my plan";
+    actionBtn.hidden = !preview;
+    undoBtn.hidden = true;
+    return;
+  }
+
+  title.textContent = "Plan re-balanced";
+  pill.textContent = "Fresh start";
+  pill.classList.add("pill-good");
+  summary.textContent =
+    `On ${fmtDate(parseISODate(last.createdOn))}, ${fmtNum(last.lagCleared)} lectures had piled up. Instead of carrying them as a debt, the plan now spreads the ${fmtNum(last.remaining)} lectures that were left across the time you have, finishing around ${fmtDate(parseISODate(last.finishDate))}.`;
+  chips.innerHTML = adjustChipsHtml(last);
+  // How does the new daily pace compare with the plan it replaced?
+  const prev = list.length > 1 ? list[list.length - 2] : null;
+  const prevWeekday = prev ? prev.weekdayTarget : Number(state.config.weekdayTarget);
+  const prevWeekend = prev ? prev.weekendTarget : Number(state.config.weekendTarget);
+  const prevPerWeek = prevWeekday * 5 + prevWeekend * 2;
+  const newPerWeek = last.weekdayTarget * 5 + last.weekendTarget * 2;
+  let pace;
+  if (Math.abs(newPerWeek - prevPerWeek) < 0.01) {
+    pace = "Your usual daily pace still gets everything done in time, so the only change is that the backlog is gone.";
+  } else if (newPerWeek > prevPerWeek) {
+    pace = `That is a little more per week than before (${fmtNum(newPerWeek)} instead of ${fmtNum(prevPerWeek)}), spread so it stays doable.`;
+  } else {
+    pace = `That is lighter than before (${fmtNum(newPerWeek)} a week instead of ${fmtNum(prevPerWeek)}), because there is time to spare.`;
+  }
+  note.textContent = last.heavy
+    ? "This is a heavy load. If it feels like too much, move your target date later in Plan settings and the plan will ease off."
+    : `You're back on schedule and nothing from the past is owed. ${pace}`;
+  actionBtn.hidden = true;
+  undoBtn.hidden = false;
 }
 
 const GAUGE_RADIUS = 64;
@@ -1151,6 +1512,8 @@ function renderGoal() {
     note.textContent = "Every lecture is done. The goal is complete.";
   } else if (!g.started) {
     note.textContent = `Your plan begins on ${planStart().toLocaleDateString(undefined, { day: "numeric", month: "long" })}. Nothing is owed yet.`;
+  } else if (g.lag > catchupThreshold()) {
+    note.textContent = `${fmtNum(g.lag)} lectures have piled up, past the ${catchupThreshold()}-lecture limit. The plan card above shows how to start fresh.`;
   } else if (g.lag > 0.0001) {
     // A realistic window: small gaps in a week, big ones spread over more time
     const horizon = g.lag <= 14 ? { days: 7, label: "a week" }
@@ -1160,7 +1523,8 @@ function renderGoal() {
     const worst = g.subjects.filter(x => x.lag > 0).sort((a, b) => b.lag - a.lag)[0];
     note.textContent =
       `To clear the ${fmtNum(g.lag)}-lecture gap in ${horizon.label}, add about ${fmtNum(perDay)} extra ${plural(perDay, "lecture")} a day on top of the daily target.` +
-      (worst ? ` ${worst.meta.short} has the biggest gap (${fmtNum(worst.lag)}).` : "");
+      (worst ? ` ${worst.meta.short} has the biggest gap (${fmtNum(worst.lag)}).` : "") +
+      (autoAdjustEnabled() ? ` If it ever passes ${catchupThreshold()}, the plan re-balances itself so nothing piles up.` : "");
   } else if (g.lag < -0.0001) {
     const cushion = -g.lag / Math.max(planPace, 0.1);
     note.textContent = `You're ${fmtNum(-g.lag)} ${plural(-g.lag, "lecture")} ahead of plan, about ${cushion.toFixed(1)} ${cushion.toFixed(1) === "1.0" ? "day" : "days"} of cushion.`;
@@ -1497,8 +1861,6 @@ function renderPlanTable() {
   const body = document.getElementById("plan-table-body");
   body.innerHTML = "";
   const currentIndex = weekIndexFor(todayDate());
-  const cd = courseData();
-  const target = totalWeeklyTarget();
 
   document.getElementById("plan-range").textContent =
     `${planStart().toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${planCutoff().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
@@ -1511,9 +1873,18 @@ function renderPlanTable() {
     const somDone = subjectDoneInRange("som", wStart, wEnd);
     const total = mathsDone + aemDone + somDone;
 
+    // Targets are those of whichever plan was running that week
+    const tMaths = weeklyTargetOn("maths", wStart);
+    const tAem = weeklyTargetOn("aem", wStart);
+    const tSom = weeklyTargetOn("som", wStart);
+    const target = tMaths + tAem + tSom;
+    const rebalancedHere = adjustments().some(a => a.effectiveDate === formatISODate(wStart));
+    const rebalancedAfter = adjustments().some(a => parseISODate(a.effectiveDate) > wEnd);
+
     let status = "Not started";
-    if (w < currentIndex) status = total >= target ? "Completed" : "Missed target";
+    if (w < currentIndex) status = total >= target ? "Completed" : (rebalancedAfter ? "Re-planned" : "Missed target");
     else if (w === currentIndex) status = total >= target ? "Completed" : "In progress";
+    if (rebalancedHere && w <= currentIndex) status += " · re-balanced";
 
     const tr = document.createElement("tr");
     if (w === currentIndex) tr.className = "current-week";
@@ -1521,9 +1892,9 @@ function renderPlanTable() {
     tr.innerHTML = `
       <td>${w}</td>
       <td>${dateLabel}</td>
-      <td>${mathsDone} / ${cd.maths.weeklyTarget}</td>
-      <td>${aemDone} / ${cd.aem.weeklyTarget}</td>
-      <td>${somDone} / ${cd.som.weeklyTarget}</td>
+      <td>${mathsDone} / ${tMaths}</td>
+      <td>${aemDone} / ${tAem}</td>
+      <td>${somDone} / ${tSom}</td>
       <td>${total} / ${target}</td>
       <td>${status}</td>
     `;
@@ -1616,7 +1987,7 @@ function renderSettingsForm() {
     row.innerHTML = `
       <span>${meta.name}</span>
       <input type="number" min="0" step="1" data-key="${key}" data-field="total" value="${cfg.total}" aria-label="${meta.name} total lectures" />
-      <input type="number" min="0" step="1" data-key="${key}" data-field="weeklyTarget" value="${cfg.weeklyTarget}" aria-label="${meta.name} weekly target" />
+      <input type="number" min="0" step="0.5" data-key="${key}" data-field="weeklyTarget" value="${cfg.weeklyTarget}" aria-label="${meta.name} weekly target" />
     `;
     rows.appendChild(row);
   });
@@ -1626,6 +1997,9 @@ function renderSettingsForm() {
   document.getElementById("set-length").value = state.config.lectureLengthMin;
   document.getElementById("set-weekday-target").value = state.config.weekdayTarget;
   document.getElementById("set-weekend-target").value = state.config.weekendTarget;
+  document.getElementById("set-auto-adjust").checked = autoAdjustEnabled();
+  document.getElementById("set-threshold").value = catchupThreshold();
+  document.getElementById("settings-adjust-note").hidden = adjustments().length === 0;
 }
 
 function openSettingsModal() {
@@ -1637,8 +2011,17 @@ function closeSettingsModal() {
   document.getElementById("settings-modal").classList.remove("is-open");
 }
 
+function planSignature() {
+  const c = state.config;
+  return JSON.stringify([
+    Object.keys(SUBJECT_META).map(k => [c.subjects[k].total, c.subjects[k].weeklyTarget]),
+    c.startDate, c.mainTargetDate, c.hardCutoff, c.weekdayTarget, c.weekendTarget,
+  ]);
+}
+
 function handleSettingsSubmit(e) {
   e.preventDefault();
+  const sigBefore = planSignature();
   document.querySelectorAll("#settings-subject-rows input").forEach(input => {
     const key = input.dataset.key;
     const field = input.dataset.field;
@@ -1651,11 +2034,20 @@ function handleSettingsSubmit(e) {
   state.config.lectureLengthMin = Math.max(Number(document.getElementById("set-length").value) || 30, 5);
   state.config.weekdayTarget = Math.max(Number(document.getElementById("set-weekday-target").value) || 0, 0);
   state.config.weekendTarget = Math.max(Number(document.getElementById("set-weekend-target").value) || 0, 0);
+  state.config.autoAdjust = document.getElementById("set-auto-adjust").checked;
+  state.config.catchupThreshold = Math.max(Math.round(Number(document.getElementById("set-threshold").value) || 40), 5);
+
+  // Changing the plan numbers by hand replaces any automatic re-balance
+  let replaced = false;
+  if (planSignature() !== sigBefore && adjustments().length) {
+    state.planAdjustments = [];
+    replaced = true;
+  }
 
   saveState();
   closeSettingsModal();
   render();
-  showToast("Plan settings saved.");
+  showToast(replaced ? "Plan settings saved. They replace the auto-adjusted plan." : "Plan settings saved.");
 }
 
 /* =========================================================
@@ -1668,6 +2060,379 @@ function handleEditName() {
   state.userName = trimmed || null;
   saveState();
   renderHero();
+}
+
+/* =========================================================
+   LEADERBOARD
+   Each account's real data (logs, notes, settings) stays private in
+   users/{uid}. For the board, every signed-in user publishes a small
+   public summary to leaderboard/{uid}: name, lectures done, percent,
+   this week, streak and when they were last around. Everyone signed in
+   can read those summaries; only the owner can write their own.
+   Rules for this are in FIRESTORE-RULES.txt.
+   ========================================================= */
+const LB_COLLECTION = "leaderboard";
+const LB_ACTIVE_DAYS = 7;
+const LB = {
+  entries: [],        // other people's summaries from the last fetch
+  filter: "active",   // "active" | "all"
+  loading: false,
+  loadedAt: 0,
+  error: null,        // last read error, if any
+  publishDenied: false,
+  rows: new Map(),    // uid -> <li>, reused between refreshes
+  timer: null,        // auto-refresh while the tab is open
+  celebrated: false,  // confetti for taking first place, once per page load
+};
+let lbPublishTimer = null;
+
+/* The public summary of the signed-in user */
+function buildLeaderboardEntry() {
+  const cd = courseData();
+  const keys = Object.keys(cd);
+  const total = keys.reduce((s, k) => s + (Number(cd[k].total) || 0), 0);
+  const done = totalCompleted();
+  const pct = total > 0 ? Math.min(Math.round((done / total) * 1000) / 10, 100) : 0;
+
+  const today = todayDate();
+  const wIndex = weekIndexFor(today);
+  const weekDone = logsInRange(weekStartFor(wIndex), weekEndFor(wIndex))
+    .reduce((s, l) => s + Number(l.lectures), 0);
+
+  const dates = state.logs.map(l => l.date).filter(d => typeof d === "string").sort();
+  const subjects = {};
+  keys.forEach(k => { subjects[k] = completedForSubject(k); });
+
+  return {
+    uid: currentUser ? currentUser.uid : "",
+    name: String(state.userName || "").trim().slice(0, 40),
+    done,
+    total,
+    pct,
+    weekDone,
+    streak: currentStreak(),
+    lastLogDate: dates.length ? dates[dates.length - 1] : null,
+    subjects,
+  };
+}
+
+function scheduleLeaderboardPublish(delay) {
+  if (!currentUser || !cloudReady || state.showOnLeaderboard === false) return;
+  clearTimeout(lbPublishTimer);
+  lbPublishTimer = setTimeout(publishLeaderboardEntry, typeof delay === "number" ? delay : 1500);
+}
+
+function publishLeaderboardEntry() {
+  if (!currentUser || !cloudReady || state.showOnLeaderboard === false) return Promise.resolve();
+  let entry;
+  try {
+    entry = buildLeaderboardEntry();
+    entry.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+  } catch (err) {
+    console.warn("Could not prepare the leaderboard entry:", err);
+    return Promise.resolve();
+  }
+  return db.collection(LB_COLLECTION).doc(currentUser.uid).set(entry)
+    .then(() => { LB.publishDenied = false; })
+    .catch(err => {
+      if (err && err.code === "permission-denied") LB.publishDenied = true;
+      console.warn("Could not update the leaderboard entry:", err);
+    });
+}
+
+function removeLeaderboardEntry() {
+  if (!currentUser) return Promise.resolve();
+  return db.collection(LB_COLLECTION).doc(currentUser.uid).delete()
+    .catch(err => console.warn("Could not remove the leaderboard entry:", err));
+}
+
+function normalizeLbEntry(id, data) {
+  const d = data && typeof data === "object" ? data : {};
+  const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    uid: String(id),
+    name: String(d.name || "").trim().slice(0, 40),
+    done: Math.max(num(d.done), 0),
+    total: Math.max(num(d.total), 0),
+    pct: Math.min(Math.max(num(d.pct), 0), 100),
+    weekDone: Math.max(num(d.weekDone), 0),
+    streak: Math.max(Math.round(num(d.streak)), 0),
+    lastLogDate: typeof d.lastLogDate === "string" ? d.lastLogDate : null,
+    updatedMs: d.updatedAt && typeof d.updatedAt.toMillis === "function" ? d.updatedAt.toMillis() : 0,
+  };
+}
+
+function loadLeaderboard(silent) {
+  if (!currentUser) return Promise.resolve();
+  if (LB.loading) return Promise.resolve();
+  LB.loading = true;
+  if (!silent) renderLeaderboard();
+
+  return withTimeout(
+    db.collection(LB_COLLECTION).orderBy("pct", "desc").limit(200).get(),
+    10000,
+    "Leaderboard read"
+  )
+    .then(snap => {
+      LB.entries = snap.docs.map(doc => normalizeLbEntry(doc.id, doc.data()));
+      LB.error = null;
+      LB.loadedAt = Date.now();
+    })
+    .catch(err => {
+      LB.error = err || new Error("Leaderboard unavailable");
+      console.warn("Could not load the leaderboard:", err);
+    })
+    .then(() => {
+      LB.loading = false;
+      try { renderLeaderboard(); } catch (err) { console.error("Leaderboard render failed:", err); }
+    });
+}
+
+function enterLeaderboard() {
+  try { renderLeaderboard(); } catch (err) { console.error("Leaderboard render failed:", err); }
+  publishLeaderboardEntry().then(() => loadLeaderboard(false));
+  clearInterval(LB.timer);
+  LB.timer = setInterval(() => loadLeaderboard(true), 60000);
+}
+
+function leaveLeaderboard() {
+  clearInterval(LB.timer);
+  LB.timer = null;
+}
+
+function resetLeaderboardUI() {
+  leaveLeaderboard();
+  clearTimeout(lbPublishTimer);
+  LB.entries = [];
+  LB.rows.clear();
+  LB.loading = false;
+  LB.loadedAt = 0;
+  LB.error = null;
+  LB.publishDenied = false;
+  LB.celebrated = false;
+  const list = document.getElementById("lb-list");
+  if (list) list.innerHTML = "";
+}
+
+function lbDisplayName(e) {
+  return e.name || `Student #${e.uid.slice(0, 4).toUpperCase()}`;
+}
+
+/* Medal artwork — inline SVG so it looks the same everywhere */
+function medalSvg(rank, size) {
+  const palette = {
+    1: { face: "#F2C94C", rim: "#B8860B", ribbonA: "#E85D3D", ribbonB: "#B8431F", ink: "#6B4A00" },
+    2: { face: "#DDE3E9", rim: "#8A949E", ribbonA: "#5C7FA3", ribbonB: "#3F5F82", ink: "#4A5560" },
+    3: { face: "#E0A06A", rim: "#8C5524", ribbonA: "#2FA792", ribbonB: "#1F7F6E", ink: "#5E3512" },
+  };
+  const p = palette[rank] || palette[3];
+  const h = Math.round(size * 64 / 48);
+  return `<svg class="medal medal-${rank}" viewBox="0 0 48 64" width="${size}" height="${h}" aria-hidden="true" focusable="false">
+    <polygon points="26,0 40,0 33,28 19,28" fill="${p.ribbonB}"/>
+    <polygon points="8,0 22,0 29,28 15,28" fill="${p.ribbonA}"/>
+    <circle cx="24" cy="42" r="20" fill="${p.rim}"/>
+    <circle cx="24" cy="42" r="16.5" fill="${p.face}"/>
+    <circle cx="24" cy="42" r="12.5" fill="none" stroke="${p.rim}" stroke-width="1.2" stroke-dasharray="2 2.4"/>
+    <text x="24" y="48" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="17" font-weight="700" fill="${p.ink}">${rank}</text>
+  </svg>`;
+}
+
+function lbSeenLabel(e, now) {
+  if (e.self) return "that's you";
+  if (!e.updatedMs) return "";
+  const days = Math.floor((now - e.updatedMs) / DAY_MS);
+  if (days <= 0) return "active today";
+  if (days === 1) return "active yesterday";
+  return `active ${days} days ago`;
+}
+
+/* Everything the screen needs, worked out from the last fetch plus your live numbers */
+function lbViewModel() {
+  const now = Date.now();
+  const myUid = currentUser ? currentUser.uid : null;
+  const byUid = new Map();
+  LB.entries.forEach(e => byUid.set(e.uid, e));
+
+  if (myUid) {
+    if (state.showOnLeaderboard !== false) {
+      byUid.set(myUid, { ...normalizeLbEntry(myUid, buildLeaderboardEntry()), updatedMs: now });
+    } else {
+      byUid.delete(myUid);
+    }
+  }
+
+  const all = Array.from(byUid.values()).map(e => ({
+    ...e,
+    self: e.uid === myUid,
+    active: e.uid === myUid || (e.updatedMs > 0 && now - e.updatedMs <= LB_ACTIVE_DAYS * DAY_MS),
+  }));
+  const activeCount = all.filter(e => e.active).length;
+  let list = LB.filter === "active" ? all.filter(e => e.active) : all;
+
+  list.sort((a, b) =>
+    (b.pct - a.pct) || (b.done - a.done) || (b.streak - a.streak) ||
+    lbDisplayName(a).localeCompare(lbDisplayName(b)));
+
+  // Ties share a rank; a medal needs real progress behind it
+  const better = (a, b) => a.pct > b.pct + 1e-9 || (Math.abs(a.pct - b.pct) <= 1e-9 && a.done > b.done + 1e-9);
+  list = list.map(e => {
+    const rank = 1 + list.filter(o => better(o, e)).length;
+    return { ...e, rank, medal: e.done > 0 && rank <= 3 ? rank : 0 };
+  });
+
+  return { list, now, totalCount: all.length, activeCount };
+}
+
+function lbCreateRow(uid) {
+  const li = document.createElement("li");
+  li.className = "lb-row is-new";
+  li.dataset.uid = uid;
+  li.innerHTML = `
+    <div class="lb-rank"><span class="lb-rank-num" data-f="rank"></span><span class="lb-medal" data-f="medal"></span></div>
+    <div class="lb-main">
+      <div class="lb-name-line"><span class="lb-name" data-f="name"></span><span class="lb-you" data-f="you">You</span></div>
+      <div class="ruler-track lb-track"><div class="ruler-fill"></div></div>
+      <div class="lb-meta"><span data-f="done"></span><span data-f="week"></span><span data-f="streak"></span><span data-f="seen"></span></div>
+    </div>
+    <div class="lb-pct" data-f="pct">0.0%</div>
+  `;
+  li.addEventListener("animationend", ev => {
+    if (ev.target === li) li.classList.remove("is-new");
+  });
+  return li;
+}
+
+function lbUpdateRow(li, e, now) {
+  const f = name => li.querySelector(`[data-f="${name}"]`);
+  li.classList.toggle("is-self", e.self);
+  li.classList.toggle("is-gold", e.medal === 1);
+  li.classList.toggle("is-idle", !e.active);
+  li.style.setProperty("--bar", e.medal === 1 ? "#E3A91E" : e.self ? "var(--maths)" : "var(--som)");
+
+  f("rank").textContent = String(e.rank);
+  f("rank").hidden = e.medal > 0;
+  const medalEl = f("medal");
+  const medalKey = e.medal ? String(e.medal) : "";
+  if (medalEl.dataset.medal !== medalKey) {
+    medalEl.dataset.medal = medalKey;
+    medalEl.innerHTML = e.medal ? medalSvg(e.medal, 34) : "";
+  }
+  f("name").textContent = lbDisplayName(e);
+  f("you").hidden = !e.self;
+  f("done").textContent = `${fmtNum(e.done)} / ${fmtNum(e.total)} lectures`;
+  f("week").textContent = `${fmtNum(e.weekDone)} this week`;
+  f("streak").textContent = e.streak > 0 ? `${e.streak} day streak` : "";
+  f("seen").textContent = lbSeenLabel(e, now);
+
+  setBar(li.querySelector(".ruler-fill"), Math.min(e.pct, 100));
+  setCount(f("pct"), e.pct, { format: v => `${v.toFixed(1)}%`, ms: 1000 });
+}
+
+function lbStatusMessage(vm) {
+  const rulesHint = "The leaderboard isn't switched on in your Firebase project yet. Add the leaderboard rules from FIRESTORE-RULES.txt (Firebase console → Firestore → Rules), then tap Refresh. Until then you only see yourself here.";
+  if (LB.error) {
+    const code = LB.error && LB.error.code;
+    if (code === "permission-denied") return { text: rulesHint, tone: "warn" };
+    return { text: "Couldn't reach the leaderboard. Check your connection and tap Refresh.", tone: "warn" };
+  }
+  if (LB.publishDenied) return { text: rulesHint, tone: "warn" };
+  if (LB.loading && !LB.loadedAt) return { text: "Loading the leaderboard…", tone: "" };
+  if (state.showOnLeaderboard === false) return { text: "You're hidden from the leaderboard. Tick the box below to join in.", tone: "" };
+  if (vm.list.length === 0) {
+    return { text: LB.filter === "active" ? "Nobody has been active this week yet." : "Nobody is on the board yet.", tone: "" };
+  }
+  if (vm.list.length === 1 && vm.list[0].self) {
+    return { text: "You're the first one here. Invite a friend and start the race.", tone: "" };
+  }
+  return { text: "", tone: "" };
+}
+
+function renderLeaderboard() {
+  const listEl = document.getElementById("lb-list");
+  if (!listEl) return;
+  const vm = lbViewModel();
+
+  document.querySelectorAll(".lb-seg-btn").forEach(btn => {
+    btn.classList.toggle("is-active", btn.dataset.lbFilter === LB.filter);
+  });
+  const optin = document.getElementById("lb-optin");
+  if (optin) optin.checked = state.showOnLeaderboard !== false;
+  const refresh = document.getElementById("lb-refresh-btn");
+  if (refresh) refresh.disabled = LB.loading;
+  const nameHint = document.getElementById("lb-name-hint");
+  if (nameHint) nameHint.hidden = !!state.userName || state.showOnLeaderboard === false;
+
+  const countEl = document.getElementById("lb-count");
+  if (countEl) {
+    countEl.textContent = LB.filter === "active"
+      ? `${vm.activeCount} active`
+      : `${vm.totalCount} ${plural(vm.totalCount, "student")}`;
+  }
+
+  const status = document.getElementById("lb-status");
+  const msg = lbStatusMessage(vm);
+  status.hidden = !msg.text;
+  status.textContent = msg.text;
+  status.classList.toggle("is-warn", msg.tone === "warn");
+
+  const updated = document.getElementById("lb-updated");
+  if (updated) {
+    updated.textContent = LB.loadedAt
+      ? `Updated ${new Date(LB.loadedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}. Refreshes every minute while this tab is open.`
+      : "";
+  }
+
+  // Gold medal spotlight
+  const champ = vm.list.find(e => e.medal === 1) || null;
+  const champCard = document.getElementById("lb-champion");
+  if (champCard) {
+    champCard.hidden = !champ;
+    if (champ) {
+      document.getElementById("lb-champ-medal").innerHTML = medalSvg(1, 64);
+      document.getElementById("lb-champ-name").textContent = lbDisplayName(champ);
+      document.getElementById("lb-champ-kicker").textContent = champ.self ? "You hold the gold medal" : "Gold medal";
+      document.getElementById("lb-champ-sub").textContent =
+        `${champ.pct.toFixed(1)}% of the syllabus · ${fmtNum(champ.done)} of ${fmtNum(champ.total)} lectures`;
+    }
+  }
+
+  // Rows: reuse the same elements so bars glide instead of restarting
+  const keep = new Set();
+  vm.list.forEach(e => {
+    keep.add(e.uid);
+    let li = LB.rows.get(e.uid);
+    if (!li) { li = lbCreateRow(e.uid); LB.rows.set(e.uid, li); }
+    lbUpdateRow(li, e, vm.now);
+    listEl.appendChild(li);
+  });
+  Array.from(LB.rows.keys()).forEach(uid => {
+    if (!keep.has(uid)) {
+      const li = LB.rows.get(uid);
+      if (li && li.parentNode) li.parentNode.removeChild(li);
+      LB.rows.delete(uid);
+    }
+  });
+
+  // Taking first place deserves a moment — once per visit, and only on fresh data
+  const viewEl = document.getElementById("view-leaderboard");
+  if (champ && champ.self && LB.loadedAt && !LB.error && !LB.celebrated && viewEl && !viewEl.hidden) {
+    LB.celebrated = true;
+    showToast("You're in first place. The gold medal is yours.");
+    launchConfetti();
+  }
+  observeReveals();
+}
+
+function handleLeaderboardOptIn(checked) {
+  state.showOnLeaderboard = !!checked;
+  clearTimeout(lbPublishTimer);
+  saveState();
+  if (state.showOnLeaderboard) {
+    publishLeaderboardEntry().then(() => loadLeaderboard(false));
+  } else {
+    removeLeaderboardEntry().then(() => loadLeaderboard(false));
+    renderLeaderboard();
+  }
 }
 
 /* =========================================================
@@ -1832,6 +2597,7 @@ function initApp(user) {
 
   // Show the dashboard immediately from the last local copy, or defaults.
   // This guarantees a Firestore/network problem cannot trap the UI on loading.
+  cloudReady = false;
   state = readCachedState(user.uid) || defaultState();
   timerState = loadTimerState(user.uid);
   startTimerTicker();
@@ -1853,11 +2619,15 @@ function initApp(user) {
           console.warn("Could not cache synced account data:", cacheErr);
         }
 
+        cloudReady = true;
         revealApp(user);
+        scheduleLeaderboardPublish(800);
       } else {
         // New account: keep the UI usable and create the document in the background.
         state = defaultState();
+        cloudReady = true;
         revealApp(user);
+        scheduleLeaderboardPublish(800);
 
         return withTimeout(
           db.collection("users").doc(user.uid).set(state),
@@ -1876,10 +2646,18 @@ function initApp(user) {
 }
 
 function teardownApp() {
+  cloudReady = false;
+  resetLeaderboardUI();
   state = defaultState();
   applyTheme(state.config.theme);
   clearInterval(timerTickHandle);
   timerState = { status: "idle" };
+  document.getElementById("view-dashboard").hidden = false;
+  document.getElementById("view-timer").hidden = true;
+  document.getElementById("view-leaderboard").hidden = true;
+  document.querySelectorAll(".view-nav-btn").forEach(btn => {
+    btn.classList.toggle("is-active", btn.dataset.view === "dashboard");
+  });
   document.getElementById("board").hidden = true;
   document.getElementById("app-loading").hidden = true;
   document.getElementById("auth-screen").hidden = false;
@@ -1950,6 +2728,26 @@ document.addEventListener("DOMContentLoaded", () => {
   // View switcher
   document.querySelectorAll(".view-nav-btn").forEach(btn => {
     btn.addEventListener("click", () => switchView(btn.dataset.view));
+  });
+
+  // Catch-up re-balance card
+  document.getElementById("adjust-action-btn").addEventListener("click", () => {
+    if (applyCatchupPlan(true)) render();
+  });
+  document.getElementById("adjust-undo-btn").addEventListener("click", undoLastAdjustment);
+
+  // Leaderboard
+  document.querySelectorAll(".lb-seg-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      LB.filter = btn.dataset.lbFilter === "all" ? "all" : "active";
+      renderLeaderboard();
+    });
+  });
+  document.getElementById("lb-refresh-btn").addEventListener("click", () => {
+    publishLeaderboardEntry().then(() => loadLeaderboard(false));
+  });
+  document.getElementById("lb-optin").addEventListener("change", (e) => {
+    handleLeaderboardOptIn(e.target.checked);
   });
 
   // Appearance / theme

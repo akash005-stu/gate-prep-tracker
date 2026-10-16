@@ -1,0 +1,31 @@
+WHAT'S NEW
+==========
+
+1. BACKLOG RE-BALANCE (no more pile-up guilt)
+   - When you are more than 40 lectures behind plan, the app re-balances
+     automatically after your account has synced.
+   - It starts a fresh plan from this week's Monday: the lectures still left are
+     spread over the days until your target date (keeping a 3-week cushion
+     before it), and new weekday / weekend / weekly (per subject) targets are
+     worked out from that.
+   - The backlog then reads as zero ("On schedule"). Nothing from the past is
+     owed. Past weeks show "Re-planned" instead of "Missed target".
+   - A card on the dashboard explains what changed, with an Undo button.
+   - If the load would be unrealistic (e.g. near the target date), it is NOT
+     applied automatically. The card suggests moving the target date, and a
+     "Re-balance anyway" button is offered.
+   - Plan settings has two new options: auto re-balance on/off, and the backlog
+     limit (default 40). Weekly and daily targets now accept halves (e.g. 2.5).
+   - Editing the plan numbers by hand replaces an automatic adjustment.
+   - Your original plan is never overwritten.
+
+2. LEADERBOARD TAB
+   - Ranks students by % of the syllabus finished. First place gets the gold
+     medal (with a spotlight card); 2nd and 3rd get silver and bronze.
+   - "Active this week" (opened the app in the last 7 days) or "Everyone".
+   - Refreshes every minute while open. Opt out any time with the checkbox.
+   - Needs one Firestore rules update: see FIRESTORE-RULES.txt.
+
+FILES CHANGED: index.html, script.js, style.css, service-worker.js
+FILES ADDED:   FIRESTORE-RULES.txt, CHANGES.txt
+After pushing, hard refresh (Ctrl+Shift+R); the service worker cache is bumped to v4.

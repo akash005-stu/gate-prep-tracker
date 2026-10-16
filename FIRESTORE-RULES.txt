@@ -1,0 +1,51 @@
+LEADERBOARD SETUP (one time, about 1 minute)
+============================================
+
+The leaderboard stores a small PUBLIC summary of each student in a new
+Firestore collection called "leaderboard". Your private data (logs, notes,
+settings) stays in "users" and is never shared.
+
+For the leaderboard to work, Firestore must allow that collection:
+
+1. Open https://console.firebase.google.com  ->  your project (gate-5dcce)
+2. Build -> Firestore Database -> Rules tab
+3. Keep your existing "users" rule, and add the "leaderboard" block below.
+   (If you are not sure, you can replace everything with the full rules below.)
+4. Click Publish.
+
+Until this is done the app still works normally. The Leaderboard tab just
+shows a message and lists only you.
+
+--------------------------------------------------------------------
+FULL RULES
+--------------------------------------------------------------------
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Private tracker data: only the owner can read or write it.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Public leaderboard summary: any signed-in student can read the board,
+    // but you can only create, change or delete your own entry.
+    match /leaderboard/{userId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.pct is number
+        && request.resource.data.done is number;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+--------------------------------------------------------------------
+
+What each entry contains: name, lectures done, total, percent, lectures this
+week, streak, last log date, per-subject lecture counts, last-seen time.
+A student can switch themselves off the board with the "Show me on the
+leaderboard" checkbox, which deletes their entry.

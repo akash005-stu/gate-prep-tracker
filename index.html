@@ -98,6 +98,7 @@
     <nav class="view-nav" id="view-nav" aria-label="Sections">
       <button type="button" class="view-nav-btn is-active" data-view="dashboard">Dashboard</button>
       <button type="button" class="view-nav-btn" data-view="timer">Focus Timer</button>
+      <button type="button" class="view-nav-btn" data-view="leaderboard">Leaderboard</button>
       <span class="view-nav-indicator" id="nav-indicator" aria-hidden="true"></span>
     </nav>
 
@@ -123,6 +124,21 @@
     </section>
 
     <main>
+
+      <!-- Catch-up: shown after the plan has been re-balanced (or when it is ready to be) -->
+      <section class="card reveal card-adjust" id="adjust-card" style="--spine: var(--som)" hidden>
+        <div class="card-head">
+          <h2 id="adjust-title">Plan re-balanced</h2>
+          <span id="adjust-pill" class="pill pill-good">Fresh start</span>
+        </div>
+        <p id="adjust-summary" class="adjust-summary"></p>
+        <div id="adjust-chips" class="adjust-chips"><!-- filled by JS --></div>
+        <p id="adjust-note" class="adjust-note"></p>
+        <div class="adjust-actions">
+          <button id="adjust-action-btn" class="btn btn-primary" type="button" hidden>Re-balance my plan</button>
+          <button id="adjust-undo-btn" class="btn btn-ghost" type="button" hidden>Undo this adjustment</button>
+        </div>
+      </section>
 
       <!-- Goal tracker: how far behind (or ahead of) the plan -->
       <section class="card reveal card-goal" id="goal-card" style="--spine: var(--goal-color)">
@@ -360,6 +376,49 @@
 
   </div><!-- /view-timer -->
 
+  <div id="view-leaderboard" class="view-panel" hidden>
+
+    <!-- Gold medal spotlight -->
+    <section class="card reveal card-champion" id="lb-champion" style="--spine: #E3A91E" hidden>
+      <div class="lb-champ">
+        <div class="lb-champ-medal" id="lb-champ-medal"></div>
+        <div class="lb-champ-text">
+          <span class="lb-champ-kicker" id="lb-champ-kicker">Gold medal</span>
+          <strong class="lb-champ-name" id="lb-champ-name"></strong>
+          <span class="lb-champ-sub" id="lb-champ-sub"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card reveal" id="lb-card" style="--spine: var(--aem)">
+      <div class="card-head">
+        <h2>Leaderboard</h2>
+        <span id="lb-count" class="pill pill-accent">—</span>
+      </div>
+      <p class="muted small lb-intro">Ranked by how much of the syllabus each student has finished. First place wins the gold medal.</p>
+
+      <div class="lb-toolbar">
+        <div class="lb-seg" role="group" aria-label="Who to show">
+          <button type="button" class="lb-seg-btn is-active" data-lb-filter="active">Active this week</button>
+          <button type="button" class="lb-seg-btn" data-lb-filter="all">Everyone</button>
+        </div>
+        <button id="lb-refresh-btn" class="link-btn" type="button">Refresh</button>
+      </div>
+
+      <p id="lb-status" class="lb-status" role="status" hidden></p>
+      <ol id="lb-list" class="lb-list"><!-- filled by JS --></ol>
+
+      <label class="check-field lb-optin">
+        <input type="checkbox" id="lb-optin" checked />
+        <span>Show me on the leaderboard</span>
+      </label>
+      <p id="lb-name-hint" class="muted small lb-hint" hidden>You appear as a numbered student. Tap "Set your name" at the top to show your name instead.</p>
+      <p id="lb-updated" class="muted small lb-hint"></p>
+      <p class="muted small lb-hint">Only your name, lecture counts, weekly total and streak are shared. Your notes and settings stay private.</p>
+    </section>
+
+  </div><!-- /view-leaderboard -->
+
   </div><!-- /board -->
 
   <!-- Log Study Modal -->
@@ -433,13 +492,25 @@
         <div class="settings-two-col">
           <label class="field">
             <span>Weekday target (Mon–Fri)</span>
-            <input type="number" id="set-weekday-target" min="0" step="1" required />
+            <input type="number" id="set-weekday-target" min="0" step="0.5" required />
           </label>
           <label class="field">
             <span>Weekend target (Sat–Sun)</span>
-            <input type="number" id="set-weekend-target" min="0" step="1" required />
+            <input type="number" id="set-weekend-target" min="0" step="0.5" required />
           </label>
         </div>
+
+        <div class="settings-divider"></div>
+
+        <p id="settings-adjust-note" class="muted small settings-note" hidden>An auto-adjusted plan is running right now. The numbers above are your original plan. Changing them replaces the adjusted plan.</p>
+        <label class="check-field">
+          <input type="checkbox" id="set-auto-adjust" />
+          <span>Re-balance my plan automatically when lectures pile up</span>
+        </label>
+        <label class="field">
+          <span>Backlog limit (lectures behind before the plan re-balances)</span>
+          <input type="number" id="set-threshold" min="5" step="1" required />
+        </label>
 
         <div class="modal-actions">
           <button type="button" id="settings-cancel-btn" class="btn btn-ghost">Cancel</button>
