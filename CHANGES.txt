@@ -1,3 +1,15 @@
+150-DAY PLAN SUPPORT (v6)
+- Each subject now has an optional "Lectures per day" pattern (Mon to Sun). Today's
+  target, the weekly target, "ahead/behind plan" and the projected finish date all
+  come from it. Leave it blank to keep the old evenly-spread behaviour.
+- "Use the 150-day plan" on the empty screen adds AEM (163), Engineering Mathematics
+  (268) and Solid Mechanics (173) with the PDF's daily pattern (9 / 14 / 9 a week),
+  finishing on day 133 with days 134-150 as buffer.
+- Summary line: day x of 150, week x of 19, current phase, lectures to catch up.
+- Today's schedule (weekday/weekend) and the plan rules sit under the subjects.
+  Edit the schedule and the plan start date in Settings.
+- After pushing, hard refresh (Ctrl+Shift+R). Service worker cache is now v6.
+
 LECTURE TRACKER — now for everyone
 ==================================
 

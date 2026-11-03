@@ -78,6 +78,7 @@
             <div>
               <div class="summary-pct" id="sum-pct">0%</div>
               <div class="muted" id="sum-sub">0 of 0 lectures</div>
+              <div class="muted" id="sum-plan" hidden></div>
             </div>
             <dl class="summary-stats">
               <div><dd id="sum-week">—</dd><dt>this week</dt></div>
@@ -92,11 +93,29 @@
           <h2>Track your lectures</h2>
           <p class="muted">Add a subject with how many lectures it has and when you need to finish. You'll get a target for each day and week, and it adjusts if you fall behind.</p>
           <button type="button" class="btn btn-primary" id="empty-add-btn">Add your first subject</button>
+          <button type="button" class="btn" id="empty-plan-btn">Use the 150-day plan</button>
         </div>
 
         <div class="subject-list" id="subject-list"></div>
 
         <button type="button" class="btn btn-add" id="add-subject-btn" hidden>+ Add subject</button>
+
+        <details class="history" id="schedule-card" hidden>
+          <summary id="schedule-title">Today's schedule</summary>
+          <ul class="history-list" id="schedule-list"></ul>
+          <p class="hint">Edit the times in Settings.</p>
+        </details>
+
+        <details class="history" id="rules-card">
+          <summary>Plan rules</summary>
+          <ol class="rules">
+            <li>Close the day: log your lectures every night.</li>
+            <li>Recover quickly: make up a missed lecture within 48 hours.</li>
+            <li>Protect sleep: aim for 7–8 hours. Move the morning revision, never cut sleep.</li>
+            <li>Learn actively: note key ideas for 5–10 minutes after each lecture, then solve a few problems.</li>
+            <li>Keep the buffer: use the last 17 days for backlog and revision, not new targets.</li>
+          </ol>
+        </details>
 
         <details class="history" id="history" hidden>
           <summary>Recent activity</summary>
@@ -164,6 +183,12 @@
         <span>Colour</span>
         <div class="swatches" id="sub-swatches" role="radiogroup" aria-label="Colour"></div>
       </div>
+      <div class="field">
+        <span>Lectures per day</span>
+        <div class="week" id="sub-week"></div>
+        <small class="hint">Mon to Sun. Leave blank to spread evenly until the deadline.</small>
+        <button type="button" class="link-btn" id="sub-suggest">Suggest from deadline</button>
+      </div>
       <p id="sub-preview" class="preview" aria-live="polite"></p>
       <p id="sub-error" class="notice is-warn" hidden></p>
       <div class="modal-actions">
@@ -212,6 +237,17 @@
         <div class="days" id="set-rest" role="group" aria-label="Rest days"></div>
         <small class="hint">Targets are spread over your other days.</small>
       </div>
+      <label class="field">
+        <span>Plan start date</span>
+        <input type="date" id="set-plan" />
+        <small class="hint">Shows "Day 12 of 150" and the current phase. Clear it to hide.</small>
+      </label>
+      <details class="sched-edit">
+        <summary>Daily schedule</summary>
+        <label class="field"><span>Weekdays (Mon–Fri)</span><textarea id="set-sched-wd" rows="6"></textarea></label>
+        <label class="field"><span>Weekends</span><textarea id="set-sched-we" rows="6"></textarea></label>
+        <small class="hint">One block per line: time | activity.</small>
+      </details>
       <div class="settings-block">
         <button type="button" class="btn btn-quiet" id="export-btn">Export my data</button>
         <button type="button" class="btn btn-quiet btn-danger" id="reset-btn">Delete all my data</button>
