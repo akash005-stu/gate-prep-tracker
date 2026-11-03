@@ -1,31 +1,37 @@
-WHAT'S NEW
-==========
+LECTURE TRACKER — now for everyone
+==================================
 
-1. BACKLOG RE-BALANCE (no more pile-up guilt)
-   - When you are more than 40 lectures behind plan, the app re-balances
-     automatically after your account has synced.
-   - It starts a fresh plan from this week's Monday: the lectures still left are
-     spread over the days until your target date (keeping a 3-week cushion
-     before it), and new weekday / weekend / weekly (per subject) targets are
-     worked out from that.
-   - The backlog then reads as zero ("On schedule"). Nothing from the past is
-     owed. Past weeks show "Re-planned" instead of "Missed target".
-   - A card on the dashboard explains what changed, with an Undo button.
-   - If the load would be unrealistic (e.g. near the target date), it is NOT
-     applied automatically. The card suggests moving the target date, and a
-     "Re-balance anyway" button is offered.
-   - Plan settings has two new options: auto re-balance on/off, and the backlog
-     limit (default 40). Weekly and daily targets now accept halves (e.g. 2.5).
-   - Editing the plan numbers by hand replaces an automatic adjustment.
-   - Your original plan is never overwritten.
+WHAT CHANGED
+- No more hardcoded GATE subjects. Anyone can add, edit and remove their own
+  subjects: a name, how many lectures, a finish-by date, and how many are
+  already done.
+- Targets are worked out for you. Every day the app divides what is left by the
+  study days remaining until the deadline: "about 1.6 a day", "this week 9 / 11".
+  Miss a day and the work is simply spread over the days that are left, so
+  nothing piles up (this replaces the old "40 lectures behind" re-balance).
+- Each subject shows a small status: On track, Ahead, Speed up, Tight, Done,
+  or Past deadline (with a "Set a new deadline" link).
+- Log with the + and - buttons on each card. "Log a past day" and a recent
+  activity list (with delete) sit underneath.
+- Settings: your name, rest days (targets skip them), export your data, delete
+  all data, sign out.
+- Leaderboard: rank by Overall % or This week, gold/silver/bronze medals,
+  active in the last 14 days, opt out any time.
+- Light and dark mode follow the phone/computer setting.
+- Forgot-password link on the login screen.
 
-2. LEADERBOARD TAB
-   - Ranks students by % of the syllabus finished. First place gets the gold
-     medal (with a spotlight card); 2nd and 3rd get silver and bronze.
-   - "Active this week" (opened the app in the last 7 days) or "Everyone".
-   - Refreshes every minute while open. Opt out any time with the checkbox.
-   - Needs one Firestore rules update: see FIRESTORE-RULES.txt.
+YOUR EXISTING DATA
+- Mathematics, Applied Engineering Mechanics and Strength of Materials, their
+  totals, start date, target date and every logged lecture are converted
+  automatically the first time you open the new version.
+- Your old timer sessions and settings are kept untouched in the account (under
+  "legacy"), they are just not shown.
 
-FILES CHANGED: index.html, script.js, style.css, service-worker.js
-FILES ADDED:   FIRESTORE-RULES.txt, CHANGES.txt
-After pushing, hard refresh (Ctrl+Shift+R); the service worker cache is bumped to v4.
+REMOVED TO KEEP IT MINIMAL
+- Flowmodoro focus timer, theme/appearance picker, full weekly plan table,
+  import-from-file.
+
+FILES
+Changed: index.html, script.js, style.css, service-worker.js, manifest.json
+Updated: FIRESTORE-RULES.txt (same rules as before), CHANGES.txt
+After pushing, hard refresh (Ctrl+Shift+R). Service worker cache is now v5.

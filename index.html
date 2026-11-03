@@ -2,22 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>GATE Drafting Log</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Lecture Tracker</title>
 
 <!-- PWA / installability -->
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#0E2136" />
+<meta name="color-scheme" content="light dark" />
+<meta name="theme-color" content="#F6F6F3" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#101216" media="(prefers-color-scheme: dark)" />
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="GATE Tracker" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Lecture Tracker" />
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css" />
 
 <!-- Firebase (compat SDKs — plain <script> tags, no build step needed) -->
@@ -28,27 +27,14 @@
 </head>
 <body>
 
-  <!-- Ambient background: drifting glows behind the blueprint grid -->
-  <div class="bg-orb o1" aria-hidden="true"></div>
-  <div class="bg-orb o2" aria-hidden="true"></div>
-  <div class="bg-orb o3" aria-hidden="true"></div>
-
-  <!-- Auth gate — shown until signed in -->
-  <div id="auth-screen" class="auth-screen">
+  <!-- Sign in / create account -->
+  <div id="auth-screen" class="center-screen">
     <div class="auth-card">
-      <div class="wordmark auth-wordmark">
-        <svg class="compass" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-          <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
-          <line x1="12" y1="2.5" x2="12" y2="6" stroke="currentColor" stroke-width="1.4"/>
-          <line x1="12" y1="18" x2="12" y2="21.5" stroke="currentColor" stroke-width="1.4"/>
-          <circle cx="12" cy="12" r="1.6" fill="currentColor"/>
-          <line class="compass-needle" x1="12" y1="12" x2="16.5" y2="8" stroke="currentColor" stroke-width="1.4"/>
-        </svg>
-        <span>GATE Drafting Log</span>
-      </div>
-      <div class="auth-tabs">
-        <button type="button" id="tab-login" class="auth-tab is-active">Log in</button>
-        <button type="button" id="tab-signup" class="auth-tab">Create account</button>
+      <h1 class="brand">Lecture Tracker</h1>
+      <p class="muted">Add your subjects and deadlines. Get a daily and weekly target that adjusts as you go.</p>
+      <div class="seg auth-seg" role="group" aria-label="Log in or create account">
+        <button type="button" id="tab-login" class="seg-btn is-active">Log in</button>
+        <button type="button" id="tab-signup" class="seg-btn">Create account</button>
       </div>
       <form id="auth-form">
         <label class="field">
@@ -59,488 +45,187 @@
           <span>Password</span>
           <input type="password" id="auth-password" required autocomplete="current-password" minlength="6" />
         </label>
-        <p id="auth-error" class="auth-error" hidden></p>
-        <button type="submit" id="auth-submit-btn" class="btn btn-primary auth-submit">Log in</button>
+        <p id="auth-message" class="notice" hidden></p>
+        <button type="submit" id="auth-submit-btn" class="btn btn-primary btn-block">Log in</button>
+        <button type="button" id="forgot-btn" class="link-btn auth-forgot">Forgot password?</button>
       </form>
-      <p class="muted small auth-note">Your data is stored in your own account and syncs across any device you log in on.</p>
     </div>
   </div>
 
-  <div id="app-loading" class="auth-screen" hidden>
-    <p class="muted">Loading your plan…</p>
+  <div id="app-loading" class="center-screen" hidden>
+    <p class="muted">Loading…</p>
   </div>
 
-  <div class="board" id="board" hidden>
+  <div class="app" id="board" hidden>
 
-    <!-- Top bar -->
     <header class="topbar">
-      <div class="wordmark">
-        <svg class="compass" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-          <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
-          <line x1="12" y1="2.5" x2="12" y2="6" stroke="currentColor" stroke-width="1.4"/>
-          <line x1="12" y1="18" x2="12" y2="21.5" stroke="currentColor" stroke-width="1.4"/>
-          <circle cx="12" cy="12" r="1.6" fill="currentColor"/>
-          <line class="compass-needle" x1="12" y1="12" x2="16.5" y2="8" stroke="currentColor" stroke-width="1.4"/>
-        </svg>
-        <span>GATE Drafting Log</span>
-      </div>
-      <div class="topbar-right">
-        <span id="account-email" class="date-chip"></span>
-        <span id="today-date" class="date-chip"></span>
-        <button id="theme-btn" class="link-btn" type="button">Theme</button>
-        <button id="settings-btn" class="link-btn" type="button">Plan settings</button>
-        <button id="edit-name-btn" class="link-btn" type="button">Set your name</button>
-        <button id="sign-out-btn" class="link-btn" type="button">Sign out</button>
-      </div>
+      <span class="brand brand-sm">Lecture Tracker</span>
+      <nav class="tabs" aria-label="Sections">
+        <button type="button" class="tab is-active" data-view="tracker">Tracker</button>
+        <button type="button" class="tab" data-view="leaderboard">Leaderboard</button>
+      </nav>
+      <button type="button" id="settings-btn" class="icon-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
     </header>
 
-    <!-- View switcher -->
-    <nav class="view-nav" id="view-nav" aria-label="Sections">
-      <button type="button" class="view-nav-btn is-active" data-view="dashboard">Dashboard</button>
-      <button type="button" class="view-nav-btn" data-view="timer">Focus Timer</button>
-      <button type="button" class="view-nav-btn" data-view="leaderboard">Leaderboard</button>
-      <span class="view-nav-indicator" id="nav-indicator" aria-hidden="true"></span>
-    </nav>
-
-  <div id="view-dashboard" class="view-panel">
-
-    <!-- Hero: countdown -->
-    <section class="hero">
-      <div class="hero-orbit" aria-hidden="true">
-        <span class="ring r1"></span><span class="ring r2"></span><span class="ring r3"></span><span class="core"></span>
-      </div>
-      <p id="greeting" class="hero-greeting">Good morning.</p>
-      <div class="hero-countdown">
-        <span class="tick-mark">⊢</span>
-        <span id="days-left" class="hero-number">—</span>
-        <span class="tick-mark">⊣</span>
-        <span class="hero-number-label">days to target</span>
-      </div>
-      <p id="hero-detail" class="hero-detail">Loading your plan.</p>
-      <div class="hero-footer">
-        <span id="streak-pill" class="pill">0 day streak</span>
-        <p id="tagline" class="hero-tagline">Keep the streak alive.</p>
-      </div>
-    </section>
-
     <main>
+      <!-- ================= TRACKER ================= -->
+      <section id="view-tracker">
 
-      <!-- Catch-up: shown after the plan has been re-balanced (or when it is ready to be) -->
-      <section class="card reveal card-adjust" id="adjust-card" style="--spine: var(--som)" hidden>
-        <div class="card-head">
-          <h2 id="adjust-title">Plan re-balanced</h2>
-          <span id="adjust-pill" class="pill pill-good">Fresh start</span>
-        </div>
-        <p id="adjust-summary" class="adjust-summary"></p>
-        <div id="adjust-chips" class="adjust-chips"><!-- filled by JS --></div>
-        <p id="adjust-note" class="adjust-note"></p>
-        <div class="adjust-actions">
-          <button id="adjust-action-btn" class="btn btn-primary" type="button" hidden>Re-balance my plan</button>
-          <button id="adjust-undo-btn" class="btn btn-ghost" type="button" hidden>Undo this adjustment</button>
-        </div>
-      </section>
-
-      <!-- Goal tracker: how far behind (or ahead of) the plan -->
-      <section class="card reveal card-goal" id="goal-card" style="--spine: var(--goal-color)">
-        <div class="card-head">
-          <h2>Goal tracker</h2>
-          <span id="goal-pill" class="pill">Checking…</span>
-        </div>
-        <p id="goal-headline" class="goal-headline">Loading your goal.</p>
-
-        <div class="goal-top">
-          <div class="gauge" id="gauge" role="img" aria-labelledby="goal-lag-num goal-lag-label">
-            <svg viewBox="0 0 160 160" aria-hidden="true">
-              <defs>
-                <pattern id="hatch" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
-                  <rect width="9" height="9" style="fill:var(--bad-soft)"/>
-                  <rect width="3.5" height="9" style="fill:var(--bad)"/>
-                </pattern>
-              </defs>
-              <circle class="gauge-track" cx="80" cy="80" r="64" />
-              <circle class="gauge-gap" id="gauge-gap" cx="80" cy="80" r="64" transform="rotate(-90 80 80)" />
-              <circle class="gauge-fill" id="gauge-fill" cx="80" cy="80" r="64" transform="rotate(-90 80 80)" />
-            </svg>
-            <div class="gauge-center">
-              <span id="goal-lag-num" class="gauge-num">0</span>
-              <span id="goal-lag-label" class="gauge-label">lectures behind</span>
+        <section class="summary" id="summary" hidden>
+          <div class="summary-top">
+            <div>
+              <div class="summary-pct" id="sum-pct">0%</div>
+              <div class="muted" id="sum-sub">0 of 0 lectures</div>
             </div>
+            <dl class="summary-stats">
+              <div><dd id="sum-week">—</dd><dt>this week</dt></div>
+              <div><dd id="sum-streak">0</dd><dt>day streak</dt></div>
+              <div><dd id="sum-next">—</dd><dt id="sum-next-label">next deadline</dt></div>
+            </dl>
           </div>
+          <div class="bar bar-lg"><div class="bar-fill" id="sum-bar"></div></div>
+        </section>
 
-          <dl class="goal-stats">
-            <div class="goal-stat"><dt>Plan adherence</dt><dd id="goal-adherence">—</dd><small id="goal-adherence-sub">of today's plan</small></div>
-            <div class="goal-stat"><dt>Plan says by tonight</dt><dd id="goal-expected">—</dd><small>lectures</small></div>
-            <div class="goal-stat"><dt>You've completed</dt><dd id="goal-done">—</dd><small id="goal-done-sub">lectures</small></div>
-            <div class="goal-stat"><dt>Left for the goal</dt><dd id="goal-left">—</dd><small id="goal-left-sub">lectures</small></div>
-            <div class="goal-stat"><dt>Pace needed</dt><dd id="goal-need">—</dd><small id="goal-need-sub"></small></div>
-            <div class="goal-stat"><dt>Finish at your pace</dt><dd id="goal-proj">—</dd><small id="goal-proj-sub"></small></div>
-          </dl>
+        <div class="empty" id="empty-state" hidden>
+          <h2>Track your lectures</h2>
+          <p class="muted">Add a subject with how many lectures it has and when you need to finish. You'll get a target for each day and week, and it adjusts if you fall behind.</p>
+          <button type="button" class="btn btn-primary" id="empty-add-btn">Add your first subject</button>
         </div>
 
-        <div id="goal-subjects" class="goal-subjects"><!-- filled by JS --></div>
-        <p id="goal-catchup" class="goal-catchup"></p>
+        <div class="subject-list" id="subject-list"></div>
+
+        <button type="button" class="btn btn-add" id="add-subject-btn" hidden>+ Add subject</button>
+
+        <details class="history" id="history" hidden>
+          <summary>Recent activity</summary>
+          <ul class="history-list" id="history-list"></ul>
+          <button type="button" class="link-btn" id="log-past-btn">Log a past day</button>
+        </details>
       </section>
 
-      <!-- Today's Focus -->
-      <section class="card reveal card-focus" style="--spine: var(--maths)">
-        <div class="card-head">
-          <h2>Today's focus</h2>
-        </div>
-
-        <div class="focus-grid">
-          <div class="focus-stat">
-            <span class="focus-label">Target</span>
-            <span id="focus-target" class="focus-value">2 lectures</span>
-          </div>
-          <div class="focus-stat">
-            <span class="focus-label">Completed</span>
-            <span id="focus-completed" class="focus-value">0 / 2</span>
-          </div>
-          <div class="focus-stat">
-            <span class="focus-label">Remaining</span>
-            <span id="focus-remaining" class="focus-value">2 lectures</span>
-          </div>
-        </div>
-
-        <div class="ruler-track">
-          <div id="focus-progress-fill" class="ruler-fill" style="width:0%"></div>
-        </div>
-
-        <div class="suggested-row">
-          <span class="focus-label">Suggested for today</span>
-          <div class="suggested-picks" id="suggested-picks">
-            <!-- filled by JS -->
+      <!-- ================= LEADERBOARD ================= -->
+      <section id="view-leaderboard" hidden>
+        <div class="champion" id="lb-champion" hidden>
+          <div class="champion-medal" id="lb-champ-medal"></div>
+          <div class="champion-text">
+            <span class="champion-kicker" id="lb-champ-kicker">Gold medal</span>
+            <strong class="champion-name" id="lb-champ-name"></strong>
+            <span class="muted" id="lb-champ-sub"></span>
           </div>
         </div>
 
-        <button id="log-study-btn" class="btn btn-primary" type="button">Log study session</button>
-      </section>
-
-      <!-- 7-day strip -->
-      <section class="card reveal" style="--spine: var(--cyan)">
-        <div class="card-head">
-          <h2>Last 7 days</h2>
-          <span class="muted small">Filled = target hit</span>
+        <div class="lb-toolbar">
+          <div class="seg" role="group" aria-label="Rank by">
+            <button type="button" class="seg-btn is-active" data-lb-sort="overall">Overall</button>
+            <button type="button" class="seg-btn" data-lb-sort="week">This week</button>
+          </div>
+          <button type="button" id="lb-refresh-btn" class="link-btn">Refresh</button>
         </div>
-        <div id="day-strip" class="day-strip"><!-- filled by JS --></div>
-      </section>
 
-      <!-- Overall Progress -->
-      <section class="card reveal" style="--spine: var(--ink)">
-        <div class="card-head">
-          <h2>Overall progress</h2>
-          <span id="overall-pct" class="pill pill-accent">0%</span>
-        </div>
-        <div class="ruler-track ruler-track-lg">
-          <div id="overall-progress-fill" class="ruler-fill" style="width:0%"></div>
-        </div>
-        <ul id="overall-breakdown" class="breakdown-list">
-          <!-- filled by JS -->
-        </ul>
-      </section>
+        <p id="lb-status" class="notice" role="status" hidden></p>
+        <ol id="lb-list" class="lb-list"></ol>
 
-      <!-- Subject Cards -->
-      <section class="subject-grid" id="subject-grid">
-        <!-- filled by JS -->
-      </section>
-
-      <!-- This Week -->
-      <section class="card reveal" style="--spine: var(--ink)">
-        <div class="card-head">
-          <h2>This week</h2>
-          <span id="week-label" class="muted small">Week 1</span>
-        </div>
-        <div class="week-summary">
-          <span id="week-fraction" class="week-fraction">0 / 22</span>
-          <span id="week-pct" class="muted">0%</span>
-        </div>
-        <div class="ruler-track">
-          <div id="week-progress-fill" class="ruler-fill" style="width:0%"></div>
-        </div>
-        <p id="week-left" class="muted small">22 lectures left</p>
-
-        <div id="week-subject-rows" class="week-subject-rows">
-          <!-- filled by JS -->
-        </div>
-      </section>
-
-      <!-- Pace / Catch-up -->
-      <section class="card reveal card-pace" id="pace-card">
-        <div class="card-head">
-          <h2>Pace this week</h2>
-        </div>
-        <p id="pace-message" class="pace-message">Loading your pace.</p>
-      </section>
-
-      <!-- Recent Activity -->
-      <section class="card reveal" style="--spine: var(--ink)">
-        <div class="card-head">
-          <h2>Recent activity</h2>
-          <button id="toggle-plan-btn" class="link-btn" type="button">View full plan</button>
-        </div>
-        <ul id="activity-list" class="activity-list">
-          <li class="muted small">No study sessions logged yet.</li>
-        </ul>
-      </section>
-
-      <!-- Full plan (hidden by default) -->
-      <section class="card reveal" id="plan-section" style="--spine: var(--ink)" hidden>
-        <div class="card-head">
-          <h2>Full study plan</h2>
-          <span class="muted small" id="plan-range"></span>
-        </div>
-        <div class="table-scroll">
-          <table class="plan-table" id="plan-table">
-            <thead>
-              <tr>
-                <th>Week</th>
-                <th>Dates</th>
-                <th>Maths</th>
-                <th>AEM</th>
-                <th>SOM</th>
-                <th>Total</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="plan-table-body"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- Backup -->
-      <section class="card reveal" style="--spine: var(--cyan)">
-        <div class="card-head">
-          <h2>Backup</h2>
-        </div>
-        <p class="muted small" style="margin-top:0">Your data syncs to your account automatically. Export a copy anyway — handy for switching apps or keeping an offline record.</p>
-        <div class="backup-actions">
-          <button id="export-btn" class="btn btn-ghost" type="button">Export backup (.json)</button>
-          <label class="btn btn-ghost file-btn">
-            Import backup
-            <input id="import-input" type="file" accept="application/json" hidden />
-          </label>
-          <button id="reset-btn" class="btn btn-ghost btn-danger" type="button">Reset all data</button>
-        </div>
-      </section>
-
-    </main>
-  </div><!-- /view-dashboard -->
-
-  <div id="view-timer" class="view-panel" hidden>
-
-    <section class="card reveal timer-card" style="--spine: var(--cyan)">
-      <div class="card-head">
-        <h2>Flowmodoro timer</h2>
-        <span id="timer-mode-pill" class="pill">Ready</span>
-      </div>
-      <p class="muted small timer-intro">Focus for as long as it flows. When you stop, you earn a break sized to the work you just did.</p>
-
-      <div class="timer-display-wrap">
-        <div id="timer-display" class="timer-display">00:00</div>
-        <div id="timer-sublabel" class="timer-sublabel">Tap start when you're ready</div>
-      </div>
-
-      <div class="timer-controls" id="timer-idle-controls">
-        <label class="field timer-subject-field">
-          <span>What are you focusing on?</span>
-          <select id="timer-subject"></select>
+        <label class="check lb-optin">
+          <input type="checkbox" id="lb-optin" checked />
+          <span>Show me on the leaderboard</span>
         </label>
-        <button id="timer-start-btn" class="btn btn-primary timer-main-btn" type="button">Start focus</button>
-      </div>
+        <p id="lb-name-hint" class="hint" hidden>You appear as a numbered student. Add your name in Settings to show it instead.</p>
+        <p id="lb-updated" class="hint"></p>
+        <p class="hint">Only your name, lecture totals, weekly count and streak are shared. Subject names and notes stay private. Showing students active in the last 14 days.</p>
+      </section>
+    </main>
+  </div>
 
-      <div class="timer-controls" id="timer-focus-controls" hidden>
-        <button id="timer-end-focus-btn" class="btn btn-primary timer-main-btn" type="button">End focus &amp; take a break</button>
-        <button id="timer-discard-btn" class="link-btn" type="button">Discard session</button>
-      </div>
-
-      <div class="timer-controls" id="timer-rest-controls" hidden>
-        <button id="timer-skip-rest-btn" class="btn btn-ghost timer-main-btn" type="button">Skip break</button>
-        <button id="timer-add-min-btn" class="link-btn" type="button">+1 min break</button>
-      </div>
-
-      <div class="timer-ratio-row">
-        <span class="focus-label">Break ratio — every 1 min of focus earns 1 ⁄ <span id="ratio-value">5</span> min of break</span>
-        <input type="range" id="timer-ratio" min="2" max="8" step="1" value="5" aria-label="Break ratio" />
-      </div>
-    </section>
-
-    <section class="card reveal" style="--spine: var(--som)">
-      <div class="card-head">
-        <h2>Today's focus sessions</h2>
-        <span id="timer-today-total" class="pill pill-accent">0m focused</span>
-      </div>
-      <ul id="timer-session-list" class="activity-list">
-        <li class="muted small">No focus sessions logged yet today.</li>
-      </ul>
-    </section>
-
-  </div><!-- /view-timer -->
-
-  <div id="view-leaderboard" class="view-panel" hidden>
-
-    <!-- Gold medal spotlight -->
-    <section class="card reveal card-champion" id="lb-champion" style="--spine: #E3A91E" hidden>
-      <div class="lb-champ">
-        <div class="lb-champ-medal" id="lb-champ-medal"></div>
-        <div class="lb-champ-text">
-          <span class="lb-champ-kicker" id="lb-champ-kicker">Gold medal</span>
-          <strong class="lb-champ-name" id="lb-champ-name"></strong>
-          <span class="lb-champ-sub" id="lb-champ-sub"></span>
-        </div>
-      </div>
-    </section>
-
-    <section class="card reveal" id="lb-card" style="--spine: var(--aem)">
-      <div class="card-head">
-        <h2>Leaderboard</h2>
-        <span id="lb-count" class="pill pill-accent">—</span>
-      </div>
-      <p class="muted small lb-intro">Ranked by how much of the syllabus each student has finished. First place wins the gold medal.</p>
-
-      <div class="lb-toolbar">
-        <div class="lb-seg" role="group" aria-label="Who to show">
-          <button type="button" class="lb-seg-btn is-active" data-lb-filter="active">Active this week</button>
-          <button type="button" class="lb-seg-btn" data-lb-filter="all">Everyone</button>
-        </div>
-        <button id="lb-refresh-btn" class="link-btn" type="button">Refresh</button>
-      </div>
-
-      <p id="lb-status" class="lb-status" role="status" hidden></p>
-      <ol id="lb-list" class="lb-list"><!-- filled by JS --></ol>
-
-      <label class="check-field lb-optin">
-        <input type="checkbox" id="lb-optin" checked />
-        <span>Show me on the leaderboard</span>
+  <!-- ================= MODALS ================= -->
+  <div class="modal" id="subject-modal" hidden>
+    <form class="modal-card" id="subject-form" novalidate>
+      <h2 id="subject-modal-title">Add subject</h2>
+      <label class="field">
+        <span>Name</span>
+        <input type="text" id="sub-name" maxlength="40" required autocomplete="off" placeholder="e.g. Thermodynamics" />
       </label>
-      <p id="lb-name-hint" class="muted small lb-hint" hidden>You appear as a numbered student. Tap "Set your name" at the top to show your name instead.</p>
-      <p id="lb-updated" class="muted small lb-hint"></p>
-      <p class="muted small lb-hint">Only your name, lecture counts, weekly total and streak are shared. Your notes and settings stay private.</p>
-    </section>
-
-  </div><!-- /view-leaderboard -->
-
-  </div><!-- /board -->
-
-  <!-- Log Study Modal -->
-  <div id="log-modal" class="modal-overlay">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div class="modal-head">
-        <h2 id="modal-title">Log study session</h2>
-        <button id="modal-close-btn" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      <div class="field-row">
+        <label class="field">
+          <span>Total lectures</span>
+          <input type="number" id="sub-total" min="1" step="1" inputmode="numeric" required placeholder="60" />
+        </label>
+        <label class="field">
+          <span>Already done</span>
+          <input type="number" id="sub-base" min="0" step="1" inputmode="numeric" value="0" />
+        </label>
       </div>
-      <form id="log-form">
+      <label class="field">
+        <span>Finish by</span>
+        <input type="date" id="sub-deadline" required />
+      </label>
+      <div class="field">
+        <span>Colour</span>
+        <div class="swatches" id="sub-swatches" role="radiogroup" aria-label="Colour"></div>
+      </div>
+      <p id="sub-preview" class="preview" aria-live="polite"></p>
+      <p id="sub-error" class="notice is-warn" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-quiet btn-danger" id="sub-delete-btn" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-quiet" id="sub-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="modal" id="log-modal" hidden>
+    <form class="modal-card" id="log-form">
+      <h2>Log a past day</h2>
+      <label class="field">
+        <span>Subject</span>
+        <select id="log-subject"></select>
+      </label>
+      <div class="field-row">
         <label class="field">
           <span>Date</span>
           <input type="date" id="log-date" required />
         </label>
         <label class="field">
-          <span>Subject</span>
-          <select id="log-subject" required></select>
+          <span>Lectures</span>
+          <input type="number" id="log-count" min="1" step="1" inputmode="numeric" value="1" required />
         </label>
-        <label class="field">
-          <span>Lectures completed</span>
-          <input type="number" id="log-lectures" min="0.5" step="0.5" value="1" required />
-        </label>
-        <label class="field">
-          <span>Minutes</span>
-          <input type="number" id="log-minutes" min="0" step="5" value="30" />
-        </label>
-        <label class="field">
-          <span>Notes <span class="muted">(optional)</span></span>
-          <textarea id="log-notes" rows="2" placeholder="Topics covered, what to revisit…"></textarea>
-        </label>
-        <div class="modal-actions">
-          <button type="button" id="modal-cancel-btn" class="btn btn-ghost">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save entry</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Settings Modal -->
-  <div id="settings-modal" class="modal-overlay">
-    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-      <div class="modal-head">
-        <h2 id="settings-title">Plan settings</h2>
-        <button id="settings-close-btn" class="icon-btn" type="button" aria-label="Close">&times;</button>
       </div>
-      <form id="settings-form">
-        <div class="settings-grid-head">
-          <span></span><span>Total lectures</span><span>Weekly target</span>
-        </div>
-        <div id="settings-subject-rows"><!-- filled by JS --></div>
-
-        <div class="settings-divider"></div>
-
-        <label class="field">
-          <span>Plan start (Week 1 Monday)</span>
-          <input type="date" id="set-start" required />
-        </label>
-        <label class="field">
-          <span>Main target date</span>
-          <input type="date" id="set-target" required />
-        </label>
-        <label class="field">
-          <span>Hard cutoff</span>
-          <input type="date" id="set-cutoff" required />
-        </label>
-        <label class="field">
-          <span>Lecture length (minutes)</span>
-          <input type="number" id="set-length" min="5" step="5" required />
-        </label>
-
-        <div class="settings-two-col">
-          <label class="field">
-            <span>Weekday target (Mon–Fri)</span>
-            <input type="number" id="set-weekday-target" min="0" step="0.5" required />
-          </label>
-          <label class="field">
-            <span>Weekend target (Sat–Sun)</span>
-            <input type="number" id="set-weekend-target" min="0" step="0.5" required />
-          </label>
-        </div>
-
-        <div class="settings-divider"></div>
-
-        <p id="settings-adjust-note" class="muted small settings-note" hidden>An auto-adjusted plan is running right now. The numbers above are your original plan. Changing them replaces the adjusted plan.</p>
-        <label class="check-field">
-          <input type="checkbox" id="set-auto-adjust" />
-          <span>Re-balance my plan automatically when lectures pile up</span>
-        </label>
-        <label class="field">
-          <span>Backlog limit (lectures behind before the plan re-balances)</span>
-          <input type="number" id="set-threshold" min="5" step="1" required />
-        </label>
-
-        <div class="modal-actions">
-          <button type="button" id="settings-cancel-btn" class="btn btn-ghost">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save settings</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Appearance Modal -->
-  <div id="appearance-modal" class="modal-overlay">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="appearance-title">
-      <div class="modal-head">
-        <h2 id="appearance-title">Theme</h2>
-        <button id="appearance-close-btn" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-      <p class="muted small" style="margin-top:0">Pick an accent, or choose your own colour. Applies instantly and syncs to your account.</p>
-      <div id="theme-swatches" class="theme-swatches"><!-- filled by JS --></div>
-      <label class="field theme-custom-field">
-        <span>Custom colour</span>
-        <input type="color" id="theme-custom-input" value="#79cbea" />
-      </label>
       <div class="modal-actions">
-        <button type="button" id="theme-reset-btn" class="btn btn-ghost">Reset to default</button>
-        <button type="button" id="appearance-done-btn" class="btn btn-primary">Done</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-quiet" id="log-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add</button>
       </div>
-    </div>
+    </form>
   </div>
 
-  <!-- Toast -->
+  <div class="modal" id="settings-modal" hidden>
+    <form class="modal-card" id="settings-form">
+      <h2>Settings</h2>
+      <label class="field">
+        <span>Your name</span>
+        <input type="text" id="set-name" maxlength="40" autocomplete="nickname" placeholder="Shown on the leaderboard" />
+      </label>
+      <div class="field">
+        <span>Rest days</span>
+        <div class="days" id="set-rest" role="group" aria-label="Rest days"></div>
+        <small class="hint">Targets are spread over your other days.</small>
+      </div>
+      <div class="settings-block">
+        <button type="button" class="btn btn-quiet" id="export-btn">Export my data</button>
+        <button type="button" class="btn btn-quiet btn-danger" id="reset-btn">Delete all my data</button>
+      </div>
+      <p class="hint" id="account-email"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-quiet" id="sign-out-btn">Sign out</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-quiet" id="settings-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="script.js"></script>
