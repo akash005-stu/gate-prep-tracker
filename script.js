@@ -3,35 +3,67 @@
    Editable numbers (totals, weekly targets, dates) live in
    state.config so they can be changed from the Settings modal.
    ========================================================= */
-const SUBJECT_META = {
-  maths: { name: "Mathematics", short: "Maths", color: "#E85D3D" },
-  aem:   { name: "Applied Engineering Mechanics", short: "AEM", color: "#D99A2B" },
-  som:   { name: "Strength of Materials", short: "SOM", color: "#2FA792" },
+/* Subjects are fully user-defined (name + number of lectures) and live in
+   state.config.subjects. SUBJECT_META is a cache of display info rebuilt from
+   them by syncSubjectMeta(): name, short label and a grey shade. */
+const LEGACY_SUBJECTS = {
+  maths: { name: "Mathematics", short: "Maths" },
+  aem:   { name: "Applied Engineering Mechanics", short: "AEM" },
+  som:   { name: "Strength of Materials", short: "SOM" },
 };
+const SUBJECT_SHADES = ["#1F1F1F", "#6A6A6A", "#3A3A3A", "#8C8C8C", "#555555", "#A3A3A3"];
+const SUBJECT_META = {};
+
+function shortLabel(name) {
+  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (words.length > 1) return words.map(w => w[0]).join("").toUpperCase().slice(0, 4);
+  return (words[0] || "Subj").slice(0, 7);
+}
+
+function syncSubjectMeta(config) {
+  Object.keys(SUBJECT_META).forEach(k => delete SUBJECT_META[k]);
+  const subs = (config && config.subjects) || {};
+  Object.keys(subs).forEach((key, i) => {
+    const sub = subs[key] || {};
+    const legacy = LEGACY_SUBJECTS[key] || {};
+    const name = String(sub.name || legacy.name || "Subject").trim();
+    SUBJECT_META[key] = {
+      name,
+      short: sub.short || legacy.short || shortLabel(name),
+      color: SUBJECT_SHADES[i % SUBJECT_SHADES.length],
+    };
+  });
+}
+
+function mondayOf(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+}
 
 const STORAGE_KEY = "gate-tracker-state-v2";
 
 // Lets style.css hide .reveal cards until the entrance observer is running
 // (if this script ever failed to load, cards would simply stay visible).
-document.documentElement.classList.add("motion-ready");
+// (calm mode: cards are always visible, no entrance animation)
 
 function defaultConfig() {
   return {
     subjects: {
-      maths: { total: 271, weeklyTarget: 9 },
-      aem:   { total: 179, weeklyTarget: 6 },
-      som:   { total: 204, weeklyTarget: 7 },
+      maths: { name: "Mathematics", short: "Maths", total: 271, weeklyTarget: 9 },
+      aem:   { name: "Applied Engineering Mechanics", short: "AEM", total: 179, weeklyTarget: 6 },
+      som:   { name: "Strength of Materials", short: "SOM", total: 204, weeklyTarget: 7 },
     },
-    startDate: "2026-09-14",
-    mainTargetDate: "2027-05-25",
-    hardCutoff: "2027-05-30",
+    startDate: formatISODate(mondayOf(new Date())),
+    mainTargetDate: "2027-05-25",   // the deadline: the only date you set
+    hardCutoff: "2027-05-25",       // derived (= deadline)
     lectureLengthMin: 30,
     weekdayTarget: 2,
     weekendTarget: 6,
     catchupThreshold: 40,     // re-balance the plan once this many lectures pile up
     autoAdjust: true,         // re-balance automatically (otherwise a button is offered)
     flowmodoro: { ratio: 5 },
-    theme: { preset: "blueprint", custom: false, hue: null },
+    theme: { preset: "mono", custom: false, hue: null },
   };
 }
 
@@ -67,11 +99,13 @@ let cloudReady = false;
 let state = defaultState();
 
 function defaultState() {
+  const config = defaultConfig();
+  syncSubjectMeta(config);
   return {
     userName: null,
     logs: [],                 // {id, date:'YYYY-MM-DD', subject:'maths', lectures, minutes, notes}
     suggestedOverride: null,  // {date:'YYYY-MM-DD', subjects:['maths','som']}
-    config: defaultConfig(),
+    config,
     celebratedDates: [],      // dates we've already shown the "target hit" toast for
     timerSessions: [],        // {id, date, subject, focusSeconds, restSeconds, ratio, completedAt}
     planAdjustments: [],      // catch-up re-balances, oldest first (see buildCatchupPlan)
@@ -126,6 +160,16 @@ function mergeIntoDefaultState(parsed) {
     ? parsedConfig.subjects
     : {};
 
+  const mergedSubjects = {};
+  const srcSubjects = Object.keys(parsedSubjects).length ? parsedSubjects : defaults.config.subjects;
+  Object.keys(srcSubjects).forEach(k => {
+    const sub = { ...(defaults.config.subjects[k] || {}), ...(srcSubjects[k] || {}) };
+    sub.total = Math.max(Number(sub.total) || 0, 0);
+    sub.weeklyTarget = Math.max(Number(sub.weeklyTarget) || 0, 0);
+    mergedSubjects[k] = sub;
+  });
+  syncSubjectMeta({ subjects: mergedSubjects });
+
   return {
     ...defaults,
     ...source,
@@ -142,11 +186,7 @@ function mergeIntoDefaultState(parsed) {
     config: {
       ...defaults.config,
       ...parsedConfig,
-      subjects: {
-        maths: { ...defaults.config.subjects.maths, ...(parsedSubjects.maths || {}) },
-        aem:   { ...defaults.config.subjects.aem,   ...(parsedSubjects.aem || {}) },
-        som:   { ...defaults.config.subjects.som,   ...(parsedSubjects.som || {}) },
-      },
+      subjects: mergedSubjects,
       flowmodoro: { ...defaults.config.flowmodoro, ...(parsedConfig.flowmodoro || {}) },
       theme: { ...defaults.config.theme, ...(parsedConfig.theme || {}) },
     },
@@ -171,6 +211,7 @@ function saveState() {
 
 /* Merged course data: fixed meta + editable numbers */
 function courseData() {
+  syncSubjectMeta(state.config);
   const out = {};
   const today = todayDate();
   Object.keys(SUBJECT_META).forEach(key => {
@@ -185,14 +226,7 @@ function courseData() {
    (color-mix), so setting these three vars re-themes the whole app.
    ========================================================= */
 const THEME_PRESETS = {
-  blueprint: { label: "Blueprint", bg: "#0E2136", cyan: "#79CBEA", cyanDim: "#3E6E86" },
-  slate:     { label: "Slate",     bg: "#1B2233", cyan: "#9FB4E0", cyanDim: "#4C5D8A" },
-  forest:    { label: "Forest",    bg: "#0E2A1E", cyan: "#7CE0A8", cyanDim: "#2E7A55" },
-  sunset:    { label: "Sunset",    bg: "#331A12", cyan: "#F2A65A", cyanDim: "#B5651D" },
-  rose:      { label: "Rose",      bg: "#2B0F1D", cyan: "#F28FC0", cyanDim: "#B34A82" },
-  ocean:     { label: "Ocean",     bg: "#08262A", cyan: "#5FD9D0", cyanDim: "#1F8A82" },
-  violet:    { label: "Violet",    bg: "#211632", cyan: "#B79CEA", cyanDim: "#6E52A6" },
-  mono:      { label: "Mono",      bg: "#15181C", cyan: "#C7CDD4", cyanDim: "#6B7480" },
+  mono: { label: "Mono", bg: "#161616", cyan: "#D2D2D2", cyanDim: "#707070" },
 };
 
 function hexToHsl(hex) {
@@ -239,7 +273,7 @@ function deriveThemeFromHex(hex) {
 function resolveTheme(themeConfig) {
   const theme = themeConfig || defaultConfig().theme;
   if (theme.custom && theme.hue) return deriveThemeFromHex(theme.hue);
-  return THEME_PRESETS[theme.preset] || THEME_PRESETS.blueprint;
+  return THEME_PRESETS.mono;
 }
 
 function applyTheme(themeConfig) {
@@ -400,11 +434,12 @@ function completedForSubject(subjectKey) {
 }
 
 function totalCompleted() {
-  return state.logs.reduce((s, l) => s + Number(l.lectures), 0);
+  return state.logs.filter(l => SUBJECT_META[l.subject]).reduce((s, l) => s + Number(l.lectures), 0);
 }
 
 function logsInRange(startDate, endDate) {
   return state.logs.filter(l => {
+    if (!SUBJECT_META[l.subject]) return false;
     const d = parseISODate(l.date);
     return isSameOrAfter(d, startDate) && isSameOrBefore(d, endDate);
   });
@@ -417,7 +452,7 @@ function subjectDoneInRange(subjectKey, startDate, endDate) {
 }
 
 function logsOnDate(dateStr) {
-  return state.logs.filter(l => l.date === dateStr);
+  return state.logs.filter(l => l.date === dateStr && SUBJECT_META[l.subject]);
 }
 
 function completedOnDate(dateStr) {
@@ -552,7 +587,7 @@ function whenVisible(el, fn) {
 
 /* Number that counts up/down to `to`. Starts when first on screen, then
    animates from wherever it currently is on every later change. */
-function setCount(el, to, { format, ms = 1200 } = {}) {
+function setCount(el, to, { format, ms = 350 } = {}) {
   if (!el) return;
   const fmt = format || (v => String(Math.round(v)));
   const prev = typeof el._cur === "number" ? el._cur : 0;
@@ -632,6 +667,7 @@ function moveNavIndicator() {
 
 /* Short confetti burst when the day's target is hit */
 function launchConfetti() {
+  return; // calm mode: no confetti
   if (REDUCED_MOTION) return;
   const canvas = document.createElement("canvas");
   canvas.className = "confetti";
@@ -706,7 +742,7 @@ let timerTickHandle = null;
 let lastCompletedSession = null;
 
 function timerSubjects() {
-  return { ...courseData(), general: { name: "General focus", short: "General", color: "#8FA9B8" } };
+  return { ...courseData(), general: { name: "General focus", short: "General", color: "#8C8C8C" } };
 }
 
 function timerStorageKey(uid) { return `${STORAGE_KEY}-timer-${uid}`; }
@@ -947,7 +983,7 @@ function renderTimerSessionList() {
     const li = document.createElement("li");
     li.className = "activity-item";
     li.innerHTML = `
-      <span class="activity-tag" style="background:${c.color}22; color:${c.color}">${c.short}</span>
+      <span class="activity-tag" style="background:${c.color}22; color:${c.color}">${escapeHtml(c.short)}</span>
       <div class="activity-main">
         <span>${time} · ${formatDuration(session.focusSeconds)} focus${session.restSeconds ? ` · ${formatDuration(session.restSeconds)} break` : ""}</span>
       </div>
@@ -1170,44 +1206,12 @@ function buildCatchupPlan() {
   }
   if (wd + we === 0) return null;
 
-  // Keep the original weekend-to-weekday balance (2 vs 6 → 1:3 by default)
+  // Keep the original weekend-to-weekday balance
   const cfg = state.config;
   let ratio = Number(cfg.weekdayTarget) > 0 ? Number(cfg.weekendTarget) / Number(cfg.weekdayTarget) : 3;
   if (!Number.isFinite(ratio)) ratio = 3;
   ratio = Math.min(Math.max(ratio, 1), 5);
-
-  // Smallest weekday target (in half-lecture steps) that fits, then the smallest weekend target
-  let w = 0, e = 0, found = false;
-  for (let i = 1; i <= 60 && !found; i++) {
-    const wTry = i / 2;
-    const eCap = Math.max(Math.ceil(wTry * ratio * 2) / 2, wTry);
-    const eNeed = we > 0 ? (remaining - wd * wTry) / we : 0;
-    const eTry = Math.max(Math.ceil(eNeed * 2) / 2, wTry);
-    if (wd * wTry + we * eTry >= remaining - 1e-9 && eTry <= eCap) {
-      w = wTry; e = eTry; found = true;
-    }
-  }
-  if (!found) {
-    w = Math.max(Math.ceil((remaining / (wd + ratio * we)) * 2) / 2, 0.5);
-    e = Math.max(Math.ceil(w * ratio * 2) / 2, w);
-  }
-
-  // Weekly targets per subject, in proportion to what is left in each
-  const weeklyTotal = Math.ceil(5 * w + 2 * e - 1e-9);
-  const weekly = {};
-  const fracs = [];
-  let used = 0;
-  keys.forEach(k => {
-    const raw = weeklyTotal * remainingBy[k] / remaining;
-    const whole = Math.floor(raw + 1e-9);
-    weekly[k] = whole;
-    used += whole;
-    fracs.push({ k, frac: raw - whole });
-  });
-  fracs.sort((a, b) => b.frac - a.frac);
-  for (let i = 0; used < weeklyTotal && i < fracs.length; i++) {
-    if (remainingBy[fracs[i].k] > 0) { weekly[fracs[i].k]++; used++; }
-  }
+  const { w, e, weekly } = solveTargets(keys, remainingBy, remaining, wd, we, ratio);
 
   // Day one of the new plan reads as "on schedule": forgive whatever this week's
   // new targets would already say is owed.
@@ -1231,6 +1235,80 @@ function buildCatchupPlan() {
     finishDate: formatISODate(finish),
     heavy: w > 5 || e > 12,   // more than is realistic: don't apply this on its own
   };
+}
+
+/* Smallest daily targets (half-lecture steps) that finish `remaining` lectures
+   over `wd` weekdays and `we` weekend days, plus whole-number weekly targets per
+   subject in proportion to what is left in each. Pure. */
+function solveTargets(keys, remainingBy, remaining, wd, we, ratio) {
+  let w = 0, e = 0, found = false;
+  for (let i = 1; i <= 60 && !found; i++) {
+    const wTry = i / 2;
+    const eCap = Math.max(Math.ceil(wTry * ratio * 2) / 2, wTry);
+    const eNeed = we > 0 ? (remaining - wd * wTry) / we : 0;
+    const eTry = Math.max(Math.ceil(eNeed * 2) / 2, wTry);
+    if (wd * wTry + we * eTry >= remaining - 1e-9 && eTry <= eCap) {
+      w = wTry; e = eTry; found = true;
+    }
+  }
+  if (!found) {
+    w = Math.max(Math.ceil((remaining / (wd + ratio * we)) * 2) / 2, 0.5);
+    e = Math.max(Math.ceil(w * ratio * 2) / 2, w);
+  }
+
+  const weeklyTotal = Math.ceil(5 * w + 2 * e - 1e-9);
+  const weekly = {};
+  const fracs = [];
+  let used = 0;
+  keys.forEach(k => {
+    const raw = weeklyTotal * remainingBy[k] / remaining;
+    const whole = Math.floor(raw + 1e-9);
+    weekly[k] = whole;
+    used += whole;
+    fracs.push({ k, frac: raw - whole });
+  });
+  fracs.sort((a, b) => b.frac - a.frac);
+  for (let i = 0; used < weeklyTotal && i < fracs.length; i++) {
+    if (remainingBy[fracs[i].k] > 0) { weekly[fracs[i].k]++; used++; }
+  }
+  return { w, e, weekly };
+}
+
+/* From just "lectures per subject" + a deadline, work out everything else:
+   plan start (this week's Monday for a fresh plan), the finish date (3 weeks
+   before the deadline, for revision), lectures per weekday / weekend day and the
+   weekly target of every subject. Writes the results into `cfg` and returns a
+   summary, or null if no plan fits. */
+function derivePlan(cfg) {
+  const keys = Object.keys(cfg.subjects);
+  const monday = mondayOf(toDateOnly(parseISODate(cfg.startDate)));
+  const deadline = toDateOnly(parseISODate(cfg.mainTargetDate));
+  const remainingBy = {};
+  let remaining = 0;
+  keys.forEach(k => {
+    remainingBy[k] = Math.max(Number(cfg.subjects[k].total) || 0, 0);
+    remaining += remainingBy[k];
+  });
+  if (remaining <= 0) return null;
+
+  let finish = addDays(deadline, -CATCHUP_CUSHION_DAYS);
+  if (finish < addDays(monday, 20)) finish = deadline;
+  if (finish < addDays(monday, 6)) return null;
+
+  let wd = 0, we = 0;
+  for (let d = monday; d <= finish; d = nextDay(d)) {
+    if (isWeekendDay(d)) we++; else wd++;
+  }
+  if (wd + we === 0) return null;
+
+  const { w, e, weekly } = solveTargets(keys, remainingBy, remaining, wd, we, 3);
+  cfg.startDate = formatISODate(monday);
+  cfg.hardCutoff = cfg.mainTargetDate;
+  cfg.weekdayTarget = w;
+  cfg.weekendTarget = e;
+  let weeklyTotal = 0;
+  keys.forEach(k => { cfg.subjects[k].weeklyTarget = weekly[k]; weeklyTotal += weekly[k]; });
+  return { weekdayTarget: w, weekendTarget: e, weekly, weeklyTotal, finishDate: finish };
 }
 
 function applyCatchupPlan(manual, given) {
@@ -1278,7 +1356,7 @@ function undoLastAdjustment() {
 function adjustChipsHtml(p) {
   const weeklySum = Object.keys(SUBJECT_META).reduce((s, k) => s + (Number(p.weekly[k]) || 0), 0);
   const subs = Object.keys(SUBJECT_META).map(k => (
-    `<span class="adjust-chip adjust-chip-sub" style="--chip:${SUBJECT_META[k].color}"><i></i>${SUBJECT_META[k].short}<strong>${fmtNum(p.weekly[k])}/wk</strong></span>`
+    `<span class="adjust-chip adjust-chip-sub" style="--chip:${SUBJECT_META[k].color}"><i></i>${escapeHtml(SUBJECT_META[k].short)}<strong>${fmtNum(p.weekly[k])}/wk</strong></span>`
   )).join("");
   return `
     <span class="adjust-chip"><small>Weekdays</small><strong>${fmtNum(p.weekdayTarget)}/day</strong></span>
@@ -1684,6 +1762,7 @@ function renderSubjectCards() {
   const wEnd = weekEndFor(wIndex);
   const cd = courseData();
   const grid = document.getElementById("subject-grid");
+  grid.querySelectorAll("[data-subject]").forEach(el => { if (!cd[el.dataset.subject]) el.remove(); });
 
   Object.keys(cd).forEach(key => {
     const c = cd[key];
@@ -1722,8 +1801,10 @@ function renderSubjectCards() {
       grid.appendChild(card);
     }
 
+    card.style.setProperty("--subject-color", c.color);
+    card.style.setProperty("--bar", c.color);
     const f = name => card.querySelector(`[data-f="${name}"]`);
-    f("name").innerHTML = `${c.name}${pct >= 100 ? `<span class="subject-badge">cleared</span>` : ""}`;
+    f("name").innerHTML = `${escapeHtml(c.name)}${pct >= 100 ? `<span class="subject-badge">cleared</span>` : ""}`;
     f("abbr").textContent = c.short;
     f("completed").textContent = completed;
     f("remaining").textContent = remaining;
@@ -1754,6 +1835,7 @@ function renderWeekCard() {
     : "Weekly target complete";
 
   const rows = document.getElementById("week-subject-rows");
+  rows.querySelectorAll("[data-subject]").forEach(el => { if (!cd[el.dataset.subject]) el.remove(); });
   Object.keys(cd).forEach(key => {
     const c = cd[key];
     const done = subjectDoneInRange(key, wStart, wEnd);
@@ -1766,12 +1848,14 @@ function renderWeekCard() {
       row.dataset.subject = key;
       row.style.setProperty("--bar", c.color);
       row.innerHTML = `
-        <span>${c.short}</span>
+        <span></span>
         <div class="track"><div class="ruler-fill"></div></div>
         <span class="count"></span>
       `;
       rows.appendChild(row);
     }
+    row.style.setProperty("--bar", c.color);
+    row.firstElementChild.textContent = c.short;
     row.querySelector(".count").textContent = `${done} / ${c.weeklyTarget}`;
     setBar(row.querySelector(".ruler-fill"), subPct);
   });
@@ -1833,11 +1917,12 @@ function renderActivity() {
 
   sorted.slice(0, 8).forEach(log => {
     const c = cd[log.subject];
+    if (!c) return;
     const li = document.createElement("li");
     li.className = "activity-item";
     const dateLabel = parseISODate(log.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     li.innerHTML = `
-      <span class="activity-tag" style="background:${c.color}22; color:${c.color}">${c.short}</span>
+      <span class="activity-tag" style="background:${c.color}22; color:${c.color}">${escapeHtml(c.short)}</span>
       <div class="activity-main">
         <span>${dateLabel} · ${log.lectures} lecture${Number(log.lectures) !== 1 ? "s" : ""}${log.minutes ? ` · ${log.minutes} min` : ""}</span>
         ${log.notes ? `<span class="notes">${escapeHtml(log.notes)}</span>` : ""}
@@ -1860,7 +1945,12 @@ function renderActivity() {
 function renderPlanTable() {
   const body = document.getElementById("plan-table-body");
   body.innerHTML = "";
+  const cd = courseData();
+  const keys = Object.keys(cd);
   const currentIndex = weekIndexFor(todayDate());
+
+  document.querySelector("#plan-table thead tr").innerHTML =
+    `<th>Week</th><th>Dates</th>${keys.map(k => `<th>${escapeHtml(cd[k].short)}</th>`).join("")}<th>Total</th><th>Status</th>`;
 
   document.getElementById("plan-range").textContent =
     `${planStart().toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${planCutoff().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
@@ -1868,16 +1958,15 @@ function renderPlanTable() {
   for (let w = 1; w <= totalWeeks(); w++) {
     const wStart = weekStartFor(w);
     const wEnd = weekEndFor(w);
-    const mathsDone = subjectDoneInRange("maths", wStart, wEnd);
-    const aemDone = subjectDoneInRange("aem", wStart, wEnd);
-    const somDone = subjectDoneInRange("som", wStart, wEnd);
-    const total = mathsDone + aemDone + somDone;
-
     // Targets are those of whichever plan was running that week
-    const tMaths = weeklyTargetOn("maths", wStart);
-    const tAem = weeklyTargetOn("aem", wStart);
-    const tSom = weeklyTargetOn("som", wStart);
-    const target = tMaths + tAem + tSom;
+    let total = 0, target = 0;
+    const cells = keys.map(k => {
+      const done = subjectDoneInRange(k, wStart, wEnd);
+      const t = weeklyTargetOn(k, wStart);
+      total += done;
+      target += t;
+      return `<td>${done} / ${t}</td>`;
+    }).join("");
     const rebalancedHere = adjustments().some(a => a.effectiveDate === formatISODate(wStart));
     const rebalancedAfter = adjustments().some(a => parseISODate(a.effectiveDate) > wEnd);
 
@@ -1889,15 +1978,7 @@ function renderPlanTable() {
     const tr = document.createElement("tr");
     if (w === currentIndex) tr.className = "current-week";
     const dateLabel = `${wStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${wEnd.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
-    tr.innerHTML = `
-      <td>${w}</td>
-      <td>${dateLabel}</td>
-      <td>${mathsDone} / ${tMaths}</td>
-      <td>${aemDone} / ${tAem}</td>
-      <td>${somDone} / ${tSom}</td>
-      <td>${total} / ${target}</td>
-      <td>${status}</td>
-    `;
+    tr.innerHTML = `<td>${w}</td><td>${dateLabel}</td>${cells}<td>${total} / ${target}</td><td>${status}</td>`;
     body.appendChild(tr);
   }
 }
@@ -1976,30 +2057,83 @@ function wireLectureMinutesSync() {
 /* =========================================================
    SETTINGS MODAL
    ========================================================= */
+let settingsDraft = [];   // [{ key, name, total }] while Plan settings is open
+
 function renderSettingsForm() {
-  const rows = document.getElementById("settings-subject-rows");
-  rows.innerHTML = "";
-  Object.keys(SUBJECT_META).forEach(key => {
-    const meta = SUBJECT_META[key];
-    const cfg = state.config.subjects[key];
-    const row = document.createElement("div");
-    row.className = "settings-subject-row";
-    row.innerHTML = `
-      <span>${meta.name}</span>
-      <input type="number" min="0" step="1" data-key="${key}" data-field="total" value="${cfg.total}" aria-label="${meta.name} total lectures" />
-      <input type="number" min="0" step="0.5" data-key="${key}" data-field="weeklyTarget" value="${cfg.weeklyTarget}" aria-label="${meta.name} weekly target" />
-    `;
-    rows.appendChild(row);
-  });
-  document.getElementById("set-start").value = state.config.startDate;
+  settingsDraft = Object.keys(state.config.subjects).map(k => ({
+    key: k,
+    name: SUBJECT_META[k] ? SUBJECT_META[k].name : k,
+    total: state.config.subjects[k].total,
+  }));
+  drawSettingsRows();
   document.getElementById("set-target").value = state.config.mainTargetDate;
-  document.getElementById("set-cutoff").value = state.config.hardCutoff;
   document.getElementById("set-length").value = state.config.lectureLengthMin;
-  document.getElementById("set-weekday-target").value = state.config.weekdayTarget;
-  document.getElementById("set-weekend-target").value = state.config.weekendTarget;
   document.getElementById("set-auto-adjust").checked = autoAdjustEnabled();
   document.getElementById("set-threshold").value = catchupThreshold();
   document.getElementById("settings-adjust-note").hidden = adjustments().length === 0;
+  updateSettingsPreview();
+}
+
+function drawSettingsRows() {
+  const rows = document.getElementById("settings-subject-rows");
+  rows.innerHTML = "";
+  settingsDraft.forEach((sub, i) => {
+    const row = document.createElement("div");
+    row.className = "settings-subject-row";
+    row.innerHTML = `
+      <input type="text" maxlength="40" data-i="${i}" data-field="name" placeholder="Subject name" aria-label="Subject name" />
+      <input type="number" min="0" step="1" data-i="${i}" data-field="total" placeholder="Lectures" aria-label="Number of lectures" />
+      <button type="button" class="icon-btn" data-remove="${i}" aria-label="Remove subject">&times;</button>
+    `;
+    row.querySelector('[data-field="name"]').value = sub.name;
+    row.querySelector('[data-field="total"]').value = sub.total;
+    rows.appendChild(row);
+  });
+}
+
+function readSettingsDraft() {
+  document.querySelectorAll("#settings-subject-rows input").forEach(input => {
+    const sub = settingsDraft[Number(input.dataset.i)];
+    if (sub) sub[input.dataset.field] = input.value;
+  });
+}
+
+function updateSettingsPreview() {
+  const el = document.getElementById("settings-preview");
+  if (!el) return;
+  readSettingsDraft();
+  const tmp = JSON.parse(JSON.stringify(state.config));
+  tmp.subjects = {};
+  settingsDraft.forEach(sub => { tmp.subjects[sub.key] = { total: Math.max(Number(sub.total) || 0, 0) }; });
+  tmp.mainTargetDate = document.getElementById("set-target").value || tmp.mainTargetDate;
+  if (!state.logs.length) tmp.startDate = formatISODate(mondayOf(todayDate()));
+  const p = derivePlan(tmp);
+  el.textContent = p
+    ? `${fmtNum(p.weeklyTotal)} lectures a week (${fmtNum(p.weekdayTarget)}/day Mon–Fri, ${fmtNum(p.weekendTarget)}/day Sat–Sun). Planned to finish by ${fmtDate(p.finishDate)}, leaving 3 weeks before the deadline for revision.`
+    : "Add at least one subject with its lectures, and pick a deadline a few weeks away.";
+}
+
+function wireSettingsForm() {
+  const rows = document.getElementById("settings-subject-rows");
+  rows.addEventListener("input", updateSettingsPreview);
+  rows.addEventListener("click", ev => {
+    const btn = ev.target.closest("[data-remove]");
+    if (!btn) return;
+    readSettingsDraft();
+    if (settingsDraft.length <= 1) { showToast("Keep at least one subject."); return; }
+    settingsDraft.splice(Number(btn.dataset.remove), 1);
+    drawSettingsRows();
+    updateSettingsPreview();
+  });
+  document.getElementById("settings-add-subject").addEventListener("click", () => {
+    readSettingsDraft();
+    settingsDraft.push({ key: "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: "", total: "" });
+    drawSettingsRows();
+    const inputs = rows.querySelectorAll('[data-field="name"]');
+    inputs[inputs.length - 1].focus();
+    updateSettingsPreview();
+  });
+  document.getElementById("set-target").addEventListener("input", updateSettingsPreview);
 }
 
 function openSettingsModal() {
@@ -2013,41 +2147,65 @@ function closeSettingsModal() {
 
 function planSignature() {
   const c = state.config;
-  return JSON.stringify([
-    Object.keys(SUBJECT_META).map(k => [c.subjects[k].total, c.subjects[k].weeklyTarget]),
-    c.startDate, c.mainTargetDate, c.hardCutoff, c.weekdayTarget, c.weekendTarget,
-  ]);
+  return JSON.stringify([Object.keys(c.subjects).map(k => [k, c.subjects[k].total]), c.mainTargetDate]);
 }
 
 function handleSettingsSubmit(e) {
   e.preventDefault();
-  const sigBefore = planSignature();
-  document.querySelectorAll("#settings-subject-rows input").forEach(input => {
-    const key = input.dataset.key;
-    const field = input.dataset.field;
-    const val = Math.max(Number(input.value) || 0, 0);
-    state.config.subjects[key][field] = val;
-  });
-  state.config.startDate = document.getElementById("set-start").value || state.config.startDate;
-  state.config.mainTargetDate = document.getElementById("set-target").value || state.config.mainTargetDate;
-  state.config.hardCutoff = document.getElementById("set-cutoff").value || state.config.hardCutoff;
-  state.config.lectureLengthMin = Math.max(Number(document.getElementById("set-length").value) || 30, 5);
-  state.config.weekdayTarget = Math.max(Number(document.getElementById("set-weekday-target").value) || 0, 0);
-  state.config.weekendTarget = Math.max(Number(document.getElementById("set-weekend-target").value) || 0, 0);
-  state.config.autoAdjust = document.getElementById("set-auto-adjust").checked;
-  state.config.catchupThreshold = Math.max(Math.round(Number(document.getElementById("set-threshold").value) || 40), 5);
-
-  // Changing the plan numbers by hand replaces any automatic re-balance
-  let replaced = false;
-  if (planSignature() !== sigBefore && adjustments().length) {
-    state.planAdjustments = [];
-    replaced = true;
+  readSettingsDraft();
+  const list = settingsDraft
+    .map(sub => ({ key: sub.key, name: String(sub.name || "").trim(), total: Math.max(Math.round(Number(sub.total) || 0), 0) }))
+    .filter(sub => sub.name);
+  if (!list.length || !list.some(sub => sub.total > 0)) {
+    showToast("Add at least one subject with its number of lectures.");
+    return;
+  }
+  const deadline = document.getElementById("set-target").value;
+  if (!deadline || parseISODate(deadline) < addDays(todayDate(), 14)) {
+    showToast("Pick a deadline at least two weeks from today.");
+    return;
   }
 
+  const backup = JSON.parse(JSON.stringify(state.config));
+  const sigBefore = planSignature();
+  const subjects = {};
+  list.forEach(sub => {
+    const prev = state.config.subjects[sub.key] || {};
+    const legacy = LEGACY_SUBJECTS[sub.key];
+    subjects[sub.key] = {
+      ...prev,
+      name: sub.name,
+      short: legacy && legacy.name === sub.name ? legacy.short : shortLabel(sub.name),
+      total: sub.total,
+      weeklyTarget: Number(prev.weeklyTarget) || 0,
+    };
+  });
+  state.config.subjects = subjects;
+  state.config.mainTargetDate = deadline;
+  state.config.lectureLengthMin = Math.max(Number(document.getElementById("set-length").value) || 30, 5);
+  state.config.autoAdjust = document.getElementById("set-auto-adjust").checked;
+  state.config.catchupThreshold = Math.max(Math.round(Number(document.getElementById("set-threshold").value) || 40), 5);
+  if (!state.logs.length) state.config.startDate = formatISODate(mondayOf(todayDate()));
+
+  // Subjects or deadline changed: work the whole plan out again from them
+  let replaced = false;
+  if (planSignature() !== sigBefore) {
+    if (!derivePlan(state.config)) {
+      state.config = backup;
+      showToast("That deadline is too close to fit a plan. Pick a later date.");
+      return;
+    }
+    if (adjustments().length) { state.planAdjustments = []; replaced = true; }
+    state.suggestedOverride = null;
+  }
+
+  syncSubjectMeta(state.config);
+  populateSubjectSelect();
+  populateTimerSubjectSelect();
   saveState();
   closeSettingsModal();
   render();
-  showToast(replaced ? "Plan settings saved. They replace the auto-adjusted plan." : "Plan settings saved.");
+  showToast(replaced ? "Plan updated. It replaces the auto-adjusted plan." : `Plan saved: ${fmtNum(totalWeeklyTarget())} lectures a week.`);
 }
 
 /* =========================================================
@@ -2221,9 +2379,9 @@ function lbDisplayName(e) {
 /* Medal artwork — inline SVG so it looks the same everywhere */
 function medalSvg(rank, size) {
   const palette = {
-    1: { face: "#F2C94C", rim: "#B8860B", ribbonA: "#E85D3D", ribbonB: "#B8431F", ink: "#6B4A00" },
-    2: { face: "#DDE3E9", rim: "#8A949E", ribbonA: "#5C7FA3", ribbonB: "#3F5F82", ink: "#4A5560" },
-    3: { face: "#E0A06A", rim: "#8C5524", ribbonA: "#2FA792", ribbonB: "#1F7F6E", ink: "#5E3512" },
+    1: { face: "#E8E8E8", rim: "#2B2B2B", ribbonA: "#2B2B2B", ribbonB: "#555555", ink: "#111111" },
+    2: { face: "#CFCFCF", rim: "#6A6A6A", ribbonA: "#6A6A6A", ribbonB: "#8A8A8A", ink: "#333333" },
+    3: { face: "#B5B5B5", rim: "#555555", ribbonA: "#8A8A8A", ribbonB: "#A3A3A3", ink: "#222222" },
   };
   const p = palette[rank] || palette[3];
   const h = Math.round(size * 64 / 48);
@@ -2307,7 +2465,7 @@ function lbUpdateRow(li, e, now) {
   li.classList.toggle("is-self", e.self);
   li.classList.toggle("is-gold", e.medal === 1);
   li.classList.toggle("is-idle", !e.active);
-  li.style.setProperty("--bar", e.medal === 1 ? "#E3A91E" : e.self ? "var(--maths)" : "var(--som)");
+  li.style.setProperty("--bar", e.medal === 1 ? "#111111" : e.self ? "var(--maths)" : "var(--som)");
 
   f("rank").textContent = String(e.rank);
   f("rank").hidden = e.medal > 0;
@@ -2625,6 +2783,7 @@ function initApp(user) {
       } else {
         // New account: keep the UI usable and create the document in the background.
         state = defaultState();
+        derivePlan(state.config);
         cloudReady = true;
         revealApp(user);
         scheduleLeaderboardPublish(800);
@@ -2705,6 +2864,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target.id === "settings-modal") closeSettingsModal();
   });
   document.getElementById("settings-form").addEventListener("submit", handleSettingsSubmit);
+  wireSettingsForm();
 
   document.getElementById("export-btn").addEventListener("click", handleExport);
   document.getElementById("import-input").addEventListener("change", (e) => {

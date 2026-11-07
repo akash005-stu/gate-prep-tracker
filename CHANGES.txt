@@ -1,3 +1,23 @@
+LATEST: SIMPLE PLANNING + MONOCHROME
+===================================
+1. Plan settings now asks for only two things: subjects with their number of
+   lectures (add / rename / remove any subject) and one deadline.
+   Everything else is worked out: plan start (this week's Monday), finish date
+   (3 weeks before the deadline, for revision), lectures per weekday and weekend
+   day, and the weekly target of every subject. A live line in the form shows
+   the result before you save. Minutes per lecture, the auto re-balance switch
+   and the backlog limit moved under "Advanced".
+2. Backlog re-balance is unchanged: past the limit (40 by default) the plan
+   starts fresh from this week's Monday with new daily / weekly targets.
+3. Existing accounts keep their current numbers until Plan settings is saved.
+   Logs of a removed subject are kept but no longer counted.
+4. Look: greys only, no animated backgrounds, bars, confetti or count-up
+   effects; the Theme button is hidden. Service worker cache bumped to v5.
+   FILES CHANGED: index.html, script.js, style.css, manifest.json, service-worker.js
+
+(older notes below)
+-------------------
+
 WHAT'S NEW
 ==========
 

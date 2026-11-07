@@ -1,29 +1,29 @@
 :root {
-  --bg: #0E2136;
-  --cyan: #79CBEA;
-  --cyan-dim: #3E6E86;
+  --bg: #161616;
+  --cyan: #D2D2D2;
+  --cyan-dim: #707070;
   /* Grid lines derive from the theme accent so custom themes recolour the whole backdrop */
   --bg-grid: color-mix(in srgb, var(--cyan) 13%, transparent);
   --bg-grid-major: color-mix(in srgb, var(--cyan) 22%, transparent);
-  --panel: #F3F7F9;
-  --panel-dim: #E7EFF3;
-  --line: #C7D7DE;
-  --ink: #10222F;
-  --ink-soft: #5C7382;
+  --panel: #F5F5F5;
+  --panel-dim: #EAEAEA;
+  --line: #D2D2D2;
+  --ink: #171717;
+  --ink-soft: #6A6A6A;
 
-  --maths: #E85D3D;
-  --maths-soft: #FCE1D8;
-  --aem: #D99A2B;
-  --aem-soft: #F6E7C6;
-  --som: #2FA792;
-  --som-soft: #D6EFE9;
+  --maths: #1F1F1F;
+  --maths-soft: #E4E4E4;
+  --aem: #7D7D7D;
+  --aem-soft: #EBEBEB;
+  --som: #4A4A4A;
+  --som-soft: #E0E0E0;
 
-  --good: #2FA792;
-  --good-soft: #D6EFE9;
-  --warn: #D99A2B;
-  --warn-soft: #F6E7C6;
-  --bad: #E85D3D;
-  --bad-soft: #FCE1D8;
+  --good: #2B2B2B;
+  --good-soft: #E4E4E4;
+  --warn: #6F6F6F;
+  --warn-soft: #ECECEC;
+  --bad: #000000;
+  --bad-soft: #DCDCDC;
 
   --radius: 3px;
   --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
@@ -97,7 +97,7 @@ body {
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  color: #8FA9B8;
+  color: #9A9A9A;
   font-family: var(--sans);
   font-size: 0.88rem;
   font-weight: 600;
@@ -135,7 +135,7 @@ body {
 .hero-greeting {
   margin: 0 0 14px;
   font-size: 1.05rem;
-  color: #B9CEDA;
+  color: #BDBDBD;
 }
 
 .hero-countdown {
@@ -162,7 +162,7 @@ body {
 
 .hero-number-label {
   font-size: 1rem;
-  color: #B9CEDA;
+  color: #BDBDBD;
   padding-bottom: 0.5rem;
   margin-left: 4px;
 }
@@ -170,7 +170,7 @@ body {
 .hero-detail {
   margin: 14px 0 0;
   font-size: 0.98rem;
-  color: #B9CEDA;
+  color: #BDBDBD;
   max-width: 50ch;
   line-height: 1.5;
 }
@@ -186,7 +186,7 @@ body {
 .hero-tagline {
   margin: 0;
   font-size: 0.9rem;
-  color: #8FA9B8;
+  color: #9A9A9A;
 }
 
 main {
@@ -346,7 +346,7 @@ main {
   overflow: hidden;
   margin: 12px 0;
   position: relative;
-  box-shadow: inset 0 2px 5px rgba(16, 34, 47, 0.14);
+  box-shadow: inset 0 2px 5px rgba(20, 20, 20, 0.14);
 }
 
 .ruler-track::after {
@@ -358,7 +358,7 @@ main {
   background-image: repeating-linear-gradient(
     90deg,
     transparent, transparent calc(10% - 1px),
-    rgba(16, 34, 47, 0.2) calc(10% - 1px), rgba(16, 34, 47, 0.2) 10%
+    rgba(20, 20, 20, 0.2) calc(10% - 1px), rgba(20, 20, 20, 0.2) 10%
   );
 }
 
@@ -583,7 +583,7 @@ main {
   height: 18px;
   overflow: hidden;
   position: relative;
-  box-shadow: inset 0 2px 4px rgba(16, 34, 47, 0.12);
+  box-shadow: inset 0 2px 4px rgba(20, 20, 20, 0.12);
 }
 
 .week-subject-row .track .ruler-fill { border-radius: 0 6px 6px 0; }
@@ -711,7 +711,7 @@ main {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(14, 33, 54, 0.65);
+  background: rgba(18, 18, 18, 0.65);
   align-items: center;
   justify-content: center;
   padding: 20px;
@@ -1233,7 +1233,7 @@ body::before {
 /* Streak pill glows while a streak is alive */
 .pill.streak-hot {
   background: var(--warn-soft);
-  color: #8a5a07;
+  color: #444444;
   border-color: transparent;
   font-weight: 700;
   animation: ember 2.2s ease-in-out infinite;
@@ -1320,7 +1320,7 @@ body::before {
 .card-goal.goal-idle   { --goal-color: var(--cyan-dim); }
 
 .pill-good   { background: var(--good-soft); color: var(--good); border-color: transparent; font-weight: 700; }
-.pill-warn   { background: var(--warn-soft); color: #8a5a07; border-color: transparent; font-weight: 700; }
+.pill-warn   { background: var(--warn-soft); color: #444444; border-color: transparent; font-weight: 700; }
 .pill-bad    { background: var(--bad-soft); color: var(--bad); border-color: transparent; font-weight: 700; }
 
 .goal-headline {
@@ -1564,9 +1564,9 @@ body::before {
 .lb-row.is-new { animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 .lb-row.is-self { border-color: var(--maths); box-shadow: inset 4px 0 0 var(--maths); }
 .lb-row.is-gold {
-  border-color: #E3A91E;
-  background: linear-gradient(90deg, #FFF6D6 0%, #fff 70%);
-  box-shadow: inset 4px 0 0 #E3A91E, 0 6px 18px rgba(227, 169, 30, 0.22);
+  border-color: #222222;
+  background: linear-gradient(90deg, #F0F0F0 0%, #fff 70%);
+  box-shadow: inset 4px 0 0 #222222, 0 6px 18px rgba(0, 0, 0, 0.22);
 }
 .lb-row.is-idle { opacity: 0.7; }
 @media (hover: hover) { .lb-row:hover { transform: translateY(-1px); } }
@@ -1594,12 +1594,12 @@ body::before {
 .lb-hint { margin: 4px 0 0; }
 
 /* Gold medal spotlight */
-.card-champion { background: linear-gradient(135deg, #FFF3C4 0%, #fff 62%); overflow: hidden; }
-.card-champion::before, .card-champion::after { border-color: #E3A91E; }
+.card-champion { background: linear-gradient(135deg, #EFEFEF 0%, #fff 62%); overflow: hidden; }
+.card-champion::before, .card-champion::after { border-color: #222222; }
 .lb-champ { display: flex; align-items: center; gap: 22px; }
-.lb-champ-medal { flex-shrink: 0; line-height: 0; filter: drop-shadow(0 6px 10px rgba(184, 134, 11, 0.4)); }
+.lb-champ-medal { flex-shrink: 0; line-height: 0; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.4)); }
 .lb-champ-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.lb-champ-kicker { font-family: var(--mono); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #8a5a07; }
+.lb-champ-kicker { font-family: var(--mono); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #444444; }
 .lb-champ-name { font-size: 1.5rem; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; }
 .lb-champ-sub { font-size: 0.88rem; color: var(--ink-soft); }
 .card-champion::after { box-shadow: none; }
@@ -1638,3 +1638,36 @@ body::before {
 
 /* Ensure the HTML hidden attribute always wins over auth-screen display:flex. */
 [hidden] { display: none !important; }
+
+
+/* =========================================================
+   MONOCHROME + CALM
+   Greys only, nothing moving, flat bars. Status is carried by
+   the text labels, not by colour.
+   ========================================================= */
+:root { --bg-grid: transparent; --bg-grid-major: transparent; }
+*, *::before, *::after { animation: none !important; }
+.reveal, .reveal.play { opacity: 1 !important; transform: none !important; }
+.bg-orb, .hero-orbit, .hero-countdown .tick-mark { display: none !important; }
+#theme-btn { display: none !important; }
+
+.ruler-fill {
+  background-image: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  transition: width 0.4s ease !important;
+}
+.ruler-fill::after { display: none !important; }
+.goal-gap { background-image: none !important; background-color: var(--panel-dim) !important; }
+.hero-number, .hero-number-label { background: none !important; -webkit-text-fill-color: currentColor !important; }
+.card-champion, .lb-row.is-gold { background: var(--panel) !important; box-shadow: none !important; }
+.lb-champ-medal { filter: none !important; }
+
+/* Plan settings */
+.settings-grid-head, .settings-subject-row { grid-template-columns: 1fr 96px 32px !important; }
+.settings-subject-row input[type="text"] { width: 100%; min-width: 0; }
+.settings-add { margin-top: 8px; }
+.settings-preview { margin: 8px 0 0; line-height: 1.45; }
+.settings-advanced { margin-top: 14px; }
+.settings-advanced summary { cursor: pointer; font-size: 0.88rem; color: var(--ink-soft); padding: 4px 0; }
+.settings-advanced .field, .settings-advanced .check-field { margin-top: 10px; }

@@ -7,7 +7,7 @@
 
 <!-- PWA / installability -->
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#0E2136" />
+<meta name="theme-color" content="#161616" />
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
 <meta name="mobile-web-app-capable" content="yes" />
@@ -295,9 +295,6 @@
               <tr>
                 <th>Week</th>
                 <th>Dates</th>
-                <th>Maths</th>
-                <th>AEM</th>
-                <th>SOM</th>
                 <th>Total</th>
                 <th>Status</th>
               </tr>
@@ -465,56 +462,41 @@
         <button id="settings-close-btn" class="icon-btn" type="button" aria-label="Close">&times;</button>
       </div>
       <form id="settings-form">
+        <p class="muted small settings-note">Add your subjects and how many lectures each has, then set a deadline. Weekly and daily targets are worked out for you.</p>
         <div class="settings-grid-head">
-          <span></span><span>Total lectures</span><span>Weekly target</span>
+          <span>Subject</span><span>Lectures</span><span></span>
         </div>
         <div id="settings-subject-rows"><!-- filled by JS --></div>
+        <button type="button" id="settings-add-subject" class="btn btn-ghost settings-add">+ Add subject</button>
 
         <div class="settings-divider"></div>
 
         <label class="field">
-          <span>Plan start (Week 1 Monday)</span>
-          <input type="date" id="set-start" required />
-        </label>
-        <label class="field">
-          <span>Main target date</span>
+          <span>Deadline</span>
           <input type="date" id="set-target" required />
         </label>
-        <label class="field">
-          <span>Hard cutoff</span>
-          <input type="date" id="set-cutoff" required />
-        </label>
-        <label class="field">
-          <span>Lecture length (minutes)</span>
-          <input type="number" id="set-length" min="5" step="5" required />
-        </label>
+        <p id="settings-preview" class="settings-preview muted small"></p>
 
-        <div class="settings-two-col">
-          <label class="field">
-            <span>Weekday target (Mon–Fri)</span>
-            <input type="number" id="set-weekday-target" min="0" step="0.5" required />
+        <details class="settings-advanced">
+          <summary>Advanced</summary>
+          <p id="settings-adjust-note" class="muted small settings-note" hidden>An auto-adjusted plan is running right now. Changing your subjects or deadline replaces it.</p>
+          <label class="check-field">
+            <input type="checkbox" id="set-auto-adjust" />
+            <span>Re-balance my plan automatically when lectures pile up</span>
           </label>
           <label class="field">
-            <span>Weekend target (Sat–Sun)</span>
-            <input type="number" id="set-weekend-target" min="0" step="0.5" required />
+            <span>Backlog limit (lectures behind before the plan re-balances)</span>
+            <input type="number" id="set-threshold" min="5" step="1" required />
           </label>
-        </div>
-
-        <div class="settings-divider"></div>
-
-        <p id="settings-adjust-note" class="muted small settings-note" hidden>An auto-adjusted plan is running right now. The numbers above are your original plan. Changing them replaces the adjusted plan.</p>
-        <label class="check-field">
-          <input type="checkbox" id="set-auto-adjust" />
-          <span>Re-balance my plan automatically when lectures pile up</span>
-        </label>
-        <label class="field">
-          <span>Backlog limit (lectures behind before the plan re-balances)</span>
-          <input type="number" id="set-threshold" min="5" step="1" required />
-        </label>
+          <label class="field">
+            <span>Minutes per lecture</span>
+            <input type="number" id="set-length" min="5" step="5" required />
+          </label>
+        </details>
 
         <div class="modal-actions">
           <button type="button" id="settings-cancel-btn" class="btn btn-ghost">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save settings</button>
+          <button type="submit" class="btn btn-primary">Save</button>
         </div>
       </form>
     </div>
