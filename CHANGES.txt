@@ -1,4 +1,7 @@
-LATEST: MATTE DARK THEME + TARGET STREAK
+START DATE: Plan settings now has a Start date field (optional). Days before it
+  carry no target; weeks still run Monday-Sunday. Cache bumped to v7.
+
+MATTE DARK THEME + TARGET STREAK
 ========================================
 - Look only: near-black matte surfaces with fine grain, red accent, vivid
   per-subject colours (textures kept so subjects never rely on colour alone),

@@ -404,6 +404,9 @@ function dailyTarget(date) {
   const dow = date.getDay(); // 0 Sun ... 6 Sat
   const weekend = dow === 0 || dow === 6;
   const a = adjustmentOn(date);
+  // A start date set in Plan settings: days before it carry no target
+  const begin = state.config.beginDate;
+  if (!a && begin && toDateOnly(date) < toDateOnly(parseISODate(begin))) return 0;
   if (a) return weekend ? a.weekendTarget : a.weekdayTarget;
   return weekend ? state.config.weekendTarget : state.config.weekdayTarget;
 }
@@ -1360,7 +1363,8 @@ function solveTargets(keys, remainingBy, remaining, wd, we, ratio) {
    summary, or null if no plan fits. */
 function derivePlan(cfg) {
   const keys = Object.keys(cfg.subjects);
-  const monday = mondayOf(toDateOnly(parseISODate(cfg.startDate)));
+  const begin = toDateOnly(parseISODate(cfg.beginDate || cfg.startDate));
+  const monday = mondayOf(begin);
   const deadline = toDateOnly(parseISODate(cfg.mainTargetDate));
   const remainingBy = {};
   let remaining = 0;
@@ -1371,11 +1375,11 @@ function derivePlan(cfg) {
   if (remaining <= 0) return null;
 
   let finish = addDays(deadline, -CATCHUP_CUSHION_DAYS);
-  if (finish < addDays(monday, 20)) finish = deadline;
-  if (finish < addDays(monday, 6)) return null;
+  if (finish < addDays(begin, 20)) finish = deadline;
+  if (finish < addDays(begin, 6)) return null;
 
   let wd = 0, we = 0;
-  for (let d = monday; d <= finish; d = nextDay(d)) {
+  for (let d = begin; d <= finish; d = nextDay(d)) {
     if (isWeekendDay(d)) we++; else wd++;
   }
   if (wd + we === 0) return null;
@@ -2150,6 +2154,7 @@ function renderSettingsForm() {
     total: state.config.subjects[k].total,
   }));
   drawSettingsRows();
+  document.getElementById("set-start").value = state.config.beginDate || state.config.startDate;
   document.getElementById("set-target").value = state.config.mainTargetDate;
   document.getElementById("set-length").value = state.config.lectureLengthMin;
   document.getElementById("set-auto-adjust").checked = autoAdjustEnabled();
@@ -2190,7 +2195,9 @@ function updateSettingsPreview() {
   tmp.subjects = {};
   settingsDraft.forEach(sub => { tmp.subjects[sub.key] = { total: Math.max(Number(sub.total) || 0, 0) }; });
   tmp.mainTargetDate = document.getElementById("set-target").value || tmp.mainTargetDate;
-  if (!state.logs.length) tmp.startDate = formatISODate(mondayOf(todayDate()));
+  const startVal = document.getElementById("set-start").value;
+  if (startVal) { tmp.beginDate = startVal; tmp.startDate = startVal; }
+  else if (!state.logs.length) { delete tmp.beginDate; tmp.startDate = formatISODate(mondayOf(todayDate())); }
   const p = derivePlan(tmp);
   el.textContent = p
     ? `${fmtNum(p.weeklyTotal)} lectures a week (${fmtNum(p.weekdayTarget)}/day Mon–Fri, ${fmtNum(p.weekendTarget)}/day Sat–Sun). Planned to finish by ${fmtDate(p.finishDate)}, leaving 3 weeks before the deadline for revision.`
@@ -2218,6 +2225,7 @@ function wireSettingsForm() {
     updateSettingsPreview();
   });
   document.getElementById("set-target").addEventListener("input", updateSettingsPreview);
+  document.getElementById("set-start").addEventListener("input", updateSettingsPreview);
 }
 
 function openSettingsModal() {
@@ -2231,7 +2239,7 @@ function closeSettingsModal() {
 
 function planSignature() {
   const c = state.config;
-  return JSON.stringify([Object.keys(c.subjects).map(k => [k, c.subjects[k].total]), c.mainTargetDate]);
+  return JSON.stringify([Object.keys(c.subjects).map(k => [k, c.subjects[k].total]), c.mainTargetDate, c.beginDate || c.startDate]);
 }
 
 function handleSettingsSubmit(e) {
@@ -2247,6 +2255,12 @@ function handleSettingsSubmit(e) {
   const deadline = document.getElementById("set-target").value;
   if (!deadline || parseISODate(deadline) < addDays(todayDate(), 14)) {
     showToast("Pick a deadline at least two weeks from today.");
+    return;
+  }
+
+  const startVal = document.getElementById("set-start").value;
+  if (startVal && parseISODate(startVal) > addDays(parseISODate(deadline), -21)) {
+    showToast("Pick a start date at least three weeks before the deadline.");
     return;
   }
 
@@ -2270,9 +2284,14 @@ function handleSettingsSubmit(e) {
   state.config.lectureLengthMin = Math.max(Number(document.getElementById("set-length").value) || 30, 5);
   state.config.autoAdjust = document.getElementById("set-auto-adjust").checked;
   state.config.catchupThreshold = Math.max(Math.round(Number(document.getElementById("set-threshold").value) || 40), 5);
-  if (!state.logs.length) state.config.startDate = formatISODate(mondayOf(todayDate()));
+  if (startVal) {
+    state.config.beginDate = startVal;
+  } else {
+    delete state.config.beginDate;
+    if (!state.logs.length) state.config.startDate = formatISODate(mondayOf(todayDate()));
+  }
 
-  // Subjects or deadline changed: work the whole plan out again from them
+  // Subjects, start date or deadline changed: work the whole plan out again from them
   let replaced = false;
   if (planSignature() !== sigBefore || state.config.startDate !== startBefore) {
     if (!derivePlan(state.config)) {
