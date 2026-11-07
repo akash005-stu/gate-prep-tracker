@@ -45,9 +45,7 @@ service cloud.firestore {
 }
 --------------------------------------------------------------------
 
-What each entry contains: name, total lectures done, total lectures, percent,
-lectures this week, streak, number of subjects, last-seen time. Subject names
-and notes are never shared.
-(If you already added these rules for the earlier version, nothing changes.)
+What each entry contains: name, lectures done, total, percent, lectures this
+week, streak, last log date, per-subject lecture counts, last-seen time.
 A student can switch themselves off the board with the "Show me on the
 leaderboard" checkbox, which deletes their entry.
