@@ -11,6 +11,10 @@ LATEST: SIMPLE PLANNING + MONOCHROME
    starts fresh from this week's Monday with new daily / weekly targets.
 3. Existing accounts keep their current numbers until Plan settings is saved.
    Logs of a removed subject are kept but no longer counted.
+5. Theme (latest): clean light theme: off-white page, white cards, near-black
+   text (all text passes WCAG AA contrast), Inter font, slim flat progress bars,
+   rounded cards, visible keyboard focus, no tiny text. Settings only re-derive
+   the plan when subjects, deadline or start week change.
 4. Look: greys only, no animated backgrounds, bars, confetti or count-up
    effects; the Theme button is hidden. Service worker cache bumped to v5.
    FILES CHANGED: index.html, script.js, style.css, manifest.json, service-worker.js

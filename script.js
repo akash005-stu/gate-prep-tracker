@@ -226,7 +226,7 @@ function courseData() {
    (color-mix), so setting these three vars re-themes the whole app.
    ========================================================= */
 const THEME_PRESETS = {
-  mono: { label: "Mono", bg: "#161616", cyan: "#D2D2D2", cyanDim: "#707070" },
+  mono: { label: "Light", bg: "#F5F5F3", cyan: "#171717", cyanDim: "#8A8A8A" },
 };
 
 function hexToHsl(hex) {
@@ -2168,6 +2168,7 @@ function handleSettingsSubmit(e) {
 
   const backup = JSON.parse(JSON.stringify(state.config));
   const sigBefore = planSignature();
+  const startBefore = state.config.startDate;
   const subjects = {};
   list.forEach(sub => {
     const prev = state.config.subjects[sub.key] || {};
@@ -2189,7 +2190,7 @@ function handleSettingsSubmit(e) {
 
   // Subjects or deadline changed: work the whole plan out again from them
   let replaced = false;
-  if (planSignature() !== sigBefore) {
+  if (planSignature() !== sigBefore || state.config.startDate !== startBefore) {
     if (!derivePlan(state.config)) {
       state.config = backup;
       showToast("That deadline is too close to fit a plan. Pick a later date.");
