@@ -7,7 +7,7 @@
    network briefly drops. Bump CACHE_NAME on every deploy that
    changes these files so old clients pick up the update.
    ========================================================= */
-const CACHE_NAME = "lecture-tracker-shell-v7";
+const CACHE_NAME = "lecture-tracker-shell-v5";
 
 const APP_SHELL = [
   "./",

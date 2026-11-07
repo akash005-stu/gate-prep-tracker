@@ -13,19 +13,6 @@ const STATE_VERSION = 3;
 const CACHE_PREFIX = "lecture-tracker-cache-";
 const LEGACY_CACHE_PREFIX = "gate-tracker-state-v2-cache-";   // the old GATE-only version
 const DAY_MS = 86400000;
-const PHASES = [[35, "Build consistency"], [70, "Maintain pace"], [105, "Protect the routine"], [133, "Finish the syllabus"], [150, "Backlog and revision"]];
-const DEFAULT_SCHEDULE = {
-  weekday: [
-    ["5:00–6:05 AM", "Wake up, light revision"], ["9:00 AM–4:00 PM", "College"], ["4:00–5:30 PM", "Travel, snack and rest"],
-    ["5:30–6:15 PM", "Engineering Mathematics"], ["6:30–7:15 PM", "Engineering Mathematics"], ["7:15–7:45 PM", "Dinner"],
-    ["7:45–8:30 PM", "AEM"], ["8:40–9:25 PM", "Solid Mechanics"], ["9:25–9:40 PM", "Update tracker, wind down"],
-  ],
-  weekend: [
-    ["7:00–7:45 AM", "Engineering Mathematics"], ["8:00–8:45 AM", "AEM"], ["8:45–10:00 AM", "Breakfast and break"],
-    ["10:00–10:45 AM", "Engineering Mathematics"], ["11:00–11:45 AM", "Solid Mechanics"], ["11:45 AM–2:30 PM", "Lunch and rest"],
-    ["2:30–3:15 PM", "AEM"], ["3:30–4:15 PM", "Solid Mechanics"], ["After 4:15 PM", "Free time, weekly review"],
-  ],
-};
 const PALETTE = ["#4F7CFF", "#E85D3D", "#2FA792", "#D99A2B", "#9B6BFF", "#E2528F", "#3FA7D6", "#6B7480"];
 
 /* =========================================================
@@ -125,25 +112,7 @@ function withTimeout(promise, ms, label) {
 let state = emptyState();
 
 function emptyState() {
-  return { version: STATE_VERSION, userName: "", restDays: [], showOnLeaderboard: true, subjects: [], logs: [], plan: null, schedule: null };
-}
-
-function normPlan(p) {
-  return p && typeof p === "object" && parseISO(p.start)
-    ? { start: p.start, days: Math.min(Math.max(Math.round(num(p.days, 150)), 1), 1000) } : null;
-}
-function normSchedule(sc) {
-  if (!sc || typeof sc !== "object") return null;
-  const clean = (arr, fallback) => {
-    const out = (Array.isArray(arr) ? arr : []).filter(e => Array.isArray(e) && typeof e[0] === "string" && typeof e[1] === "string" && e[0].trim() && e[1].trim())
-      .slice(0, 30).map(e => [e[0].trim().slice(0, 30), e[1].trim().slice(0, 60)]);
-    return out.length ? out : fallback;
-  };
-  return { weekday: clean(sc.weekday, DEFAULT_SCHEDULE.weekday), weekend: clean(sc.weekend, DEFAULT_SCHEDULE.weekend) };
-}
-function schedToText(arr) { return arr.map(([t, l]) => `${t} | ${l}`).join("\n"); }
-function textToSched(txt) {
-  return String(txt || "").split("\n").map(line => { const i = line.indexOf("|"); return i < 0 ? null : [line.slice(0, i), line.slice(i + 1)]; }).filter(Boolean);
+  return { version: STATE_VERSION, userName: "", restDays: [], showOnLeaderboard: true, subjects: [], logs: [] };
 }
 
 function cleanColor(c, i) {
@@ -203,8 +172,6 @@ function normalizeState(raw) {
     showOnLeaderboard: r.showOnLeaderboard !== false,
     subjects,
     logs,
-    plan: normPlan(r.plan),
-    schedule: normSchedule(r.schedule),
   };
   if (r.legacy && typeof r.legacy === "object") out.legacy = r.legacy;
   return out;
@@ -452,7 +419,7 @@ function createCard(id) {
     <p class="subject-meta muted js-pace"></p>
     <div class="stepper">
       <button type="button" class="step-btn js-minus" aria-label="Remove one lecture from today">−</button>
-      <span class="stepper-label"><strong class="js-today">0</strong><span class="js-goal"></span> today</span>
+      <span class="stepper-label"><strong class="js-today">0</strong> today</span>
       <button type="button" class="step-btn step-plus js-plus" aria-label="Add one lecture to today">+</button>
     </div>`;
   return el;
@@ -493,7 +460,6 @@ function updateCard(el, s, st) {
   }
 
   q(".js-today").textContent = fmtNum(st.doneToday);
-  q(".js-goal").textContent = "";
   q(".js-minus").disabled = st.doneToday <= 0;
   q(".js-plus").disabled = st.complete;
 }
@@ -508,16 +474,6 @@ function renderSummary(rows, today) {
   $("sum-pct").textContent = `${Math.floor(pct)}%`;
   $("sum-sub").textContent = `${fmtNum(done)} of ${fmtNum(total)} lectures`;
   setBarWidth($("sum-bar"), pct);
-
-  const p = state.plan, planEl = $("sum-plan");
-  planEl.hidden = !p;
-  if (p) {
-    const day = daysBetween(parseISO(p.start), today) + 1;
-    const phase = p.days === 150 ? PHASES.find(x => day <= x[0]) : null;
-    planEl.textContent = day < 1 ? `Plan starts ${fmtShortDate(parseISO(p.start))}`
-      : day > p.days ? "Plan period is over"
-      : `Day ${day} of ${p.days} · Week ${Math.ceil(day / 7)} of ${Math.ceil(p.days / 7)}${phase ? ` · ${phase[1]}` : ""}`;
-  }
 
   const open = rows.filter(r => !r.st.complete && !r.st.overdue);
   const goal = open.reduce((n, r) => n + r.st.weekGoal, 0);
@@ -589,38 +545,6 @@ function render() {
 
   renderSummary(rows, today);
   renderHistory();
-  renderSchedule(today);
-}
-
-function renderSchedule(today) {
-  const card = $("schedule-card");
-  card.hidden = state.subjects.length === 0;
-  if (card.hidden) return;
-  const weekday = today.getDay() >= 1 && today.getDay() <= 5;
-  $("schedule-title").textContent = weekday ? "Today's schedule (weekday)" : "Today's schedule (weekend)";
-  const list = $("schedule-list");
-  list.innerHTML = "";
-  (state.schedule || DEFAULT_SCHEDULE)[weekday ? "weekday" : "weekend"].forEach(([t, l]) => {
-    const li = document.createElement("li");
-    const a = document.createElement("span"); a.className = "sch-t"; a.textContent = t;
-    const b = document.createElement("span"); b.className = "h-name"; b.textContent = l;
-    li.append(a, b);
-    list.appendChild(li);
-  });
-}
-
-/* One tap: the three subjects and 150-day window from the plan PDF.
-   Lectures finish on day 133; days 134–150 stay free as buffer. */
-function loadPlan() {
-  const t = todayDate(), start = isoOf(t), deadline = isoOf(addDays(t, 132));
-  [["AEM", 163, "#D99A2B"],
-   ["Engineering Mathematics", 268, "#E85D3D"],
-   ["Solid Mechanics", 173, "#2FA792"]]
-    .forEach(([name, total, color]) => state.subjects.push({ id: uid(), name, total, base: 0, deadline, start, color }));
-  state.plan = { start, days: 150 };
-  saveState();
-  render();
-  showToast("150-day plan loaded. Edit anything from each subject.");
 }
 
 /* =========================================================
@@ -753,7 +677,7 @@ function handleSubjectSubmit(e) {
   if (editingId) {
     const s = subjectById(editingId);
     if (!s) { closeModal("subject-modal"); return; }
-    s.name = name; s.total = total; s.base = base; s.deadline = deadlineStr; s.color = chosenColor; delete s.week;
+    s.name = name; s.total = total; s.base = base; s.deadline = deadlineStr; s.color = chosenColor;
   } else {
     state.subjects.push({ id: uid(), name, total, base, deadline: deadlineStr, start: isoOf(today), color: chosenColor });
   }
@@ -836,10 +760,6 @@ function renderRestButtons() {
 function openSettings() {
   $("set-name").value = state.userName || "";
   $("account-email").textContent = currentUser && currentUser.email ? `Signed in as ${currentUser.email}` : "";
-  $("set-plan").value = state.plan ? state.plan.start : "";
-  const sch = state.schedule || DEFAULT_SCHEDULE;
-  $("set-sched-wd").value = schedToText(sch.weekday);
-  $("set-sched-we").value = schedToText(sch.weekend);
   restDraft = state.restDays.slice();
   renderRestButtons();
   openModal("settings-modal");
@@ -850,9 +770,6 @@ function handleSettingsSubmit(e) {
   if (restDraft.length >= 7) { showToast("Keep at least one study day."); return; }
   state.userName = $("set-name").value.trim().slice(0, 40);
   state.restDays = restDraft.slice().sort();
-  const ps = $("set-plan").value;
-  state.plan = parseISO(ps) ? { start: ps, days: state.plan ? state.plan.days : 150 } : null;
-  state.schedule = normSchedule({ weekday: textToSched($("set-sched-wd").value), weekend: textToSched($("set-sched-we").value) });
   saveState();
   closeModal("settings-modal");
   render();
@@ -1393,7 +1310,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // subjects
   $("add-subject-btn").addEventListener("click", () => openSubjectModal(null));
   $("empty-add-btn").addEventListener("click", () => openSubjectModal(null));
-  $("empty-plan-btn").addEventListener("click", loadPlan);
   $("subject-form").addEventListener("submit", handleSubjectSubmit);
   $("sub-cancel-btn").addEventListener("click", () => closeModal("subject-modal"));
   $("sub-delete-btn").addEventListener("click", handleSubjectDelete);
