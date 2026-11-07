@@ -31,6 +31,7 @@ function syncSubjectMeta(config) {
       name,
       short: sub.short || legacy.short || shortLabel(name),
       color: SUBJECT_SHADES[i % SUBJECT_SHADES.length],
+      tex: i % 6,   // texture index (see style.css [data-tex]) so shades never rely on tone alone
     };
   });
 }
@@ -983,7 +984,7 @@ function renderTimerSessionList() {
     const li = document.createElement("li");
     li.className = "activity-item";
     li.innerHTML = `
-      <span class="activity-tag" style="background:${c.color}22; color:${c.color}">${escapeHtml(c.short)}</span>
+      <span class="activity-tag" data-tex="${c.tex}" style="background:${c.color}22; color:${c.color}">${escapeHtml(c.short)}</span>
       <div class="activity-main">
         <span>${time} · ${formatDuration(session.focusSeconds)} focus${session.restSeconds ? ` · ${formatDuration(session.restSeconds)} break` : ""}</span>
       </div>
@@ -1356,7 +1357,7 @@ function undoLastAdjustment() {
 function adjustChipsHtml(p) {
   const weeklySum = Object.keys(SUBJECT_META).reduce((s, k) => s + (Number(p.weekly[k]) || 0), 0);
   const subs = Object.keys(SUBJECT_META).map(k => (
-    `<span class="adjust-chip adjust-chip-sub" style="--chip:${SUBJECT_META[k].color}"><i></i>${escapeHtml(SUBJECT_META[k].short)}<strong>${fmtNum(p.weekly[k])}/wk</strong></span>`
+    `<span class="adjust-chip adjust-chip-sub" data-tex="${SUBJECT_META[k].tex}" style="--chip:${SUBJECT_META[k].color}"><i></i>${escapeHtml(SUBJECT_META[k].short)}<strong>${fmtNum(p.weekly[k])}/wk</strong></span>`
   )).join("");
   return `
     <span class="adjust-chip"><small>Weekdays</small><strong>${fmtNum(p.weekdayTarget)}/day</strong></span>
@@ -1803,6 +1804,7 @@ function renderSubjectCards() {
 
     card.style.setProperty("--subject-color", c.color);
     card.style.setProperty("--bar", c.color);
+    card.dataset.tex = c.tex;
     const f = name => card.querySelector(`[data-f="${name}"]`);
     f("name").innerHTML = `${escapeHtml(c.name)}${pct >= 100 ? `<span class="subject-badge">cleared</span>` : ""}`;
     f("abbr").textContent = c.short;
@@ -1855,6 +1857,7 @@ function renderWeekCard() {
       rows.appendChild(row);
     }
     row.style.setProperty("--bar", c.color);
+    row.dataset.tex = c.tex;
     row.firstElementChild.textContent = c.short;
     row.querySelector(".count").textContent = `${done} / ${c.weeklyTarget}`;
     setBar(row.querySelector(".ruler-fill"), subPct);
@@ -1922,7 +1925,7 @@ function renderActivity() {
     li.className = "activity-item";
     const dateLabel = parseISODate(log.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     li.innerHTML = `
-      <span class="activity-tag" style="background:${c.color}22; color:${c.color}">${escapeHtml(c.short)}</span>
+      <span class="activity-tag" data-tex="${c.tex}" style="background:${c.color}22; color:${c.color}">${escapeHtml(c.short)}</span>
       <div class="activity-main">
         <span>${dateLabel} · ${log.lectures} lecture${Number(log.lectures) !== 1 ? "s" : ""}${log.minutes ? ` · ${log.minutes} min` : ""}</span>
         ${log.notes ? `<span class="notes">${escapeHtml(log.notes)}</span>` : ""}

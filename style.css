@@ -1738,3 +1738,16 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible {
 }
 input, select, textarea { border-color: #C9C9C4; }
 .btn { font-weight: 600; }
+
+/* Texture per subject: tone + pattern, so shades stay distinguishable */
+.adjust-chip-sub i { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--ink-soft); }
+[data-tex="1"] .ruler-fill, .adjust-chip-sub[data-tex="1"] i { background-image: repeating-linear-gradient(45deg,rgba(255,255,255,0.55) 0 2px,transparent 2px 6px) !important;  }
+.activity-tag[data-tex="1"] { background-image: repeating-linear-gradient(45deg,rgba(0,0,0,0.22) 0 2px,transparent 2px 6px) !important;  }
+[data-tex="2"] .ruler-fill, .adjust-chip-sub[data-tex="2"] i { background-image: radial-gradient(rgba(255,255,255,0.55) 1.3px,transparent 1.7px) !important; background-size: 7px 7px !important; }
+.activity-tag[data-tex="2"] { background-image: radial-gradient(rgba(0,0,0,0.22) 1.3px,transparent 1.7px) !important; background-size: 7px 7px !important; }
+[data-tex="3"] .ruler-fill, .adjust-chip-sub[data-tex="3"] i { background-image: repeating-linear-gradient(0deg,rgba(255,255,255,0.55) 0 2px,transparent 2px 5px) !important;  }
+.activity-tag[data-tex="3"] { background-image: repeating-linear-gradient(0deg,rgba(0,0,0,0.22) 0 2px,transparent 2px 5px) !important;  }
+[data-tex="4"] .ruler-fill, .adjust-chip-sub[data-tex="4"] i { background-image: repeating-linear-gradient(45deg,rgba(255,255,255,0.55) 0 1.5px,transparent 1.5px 6px),repeating-linear-gradient(-45deg,rgba(255,255,255,0.55) 0 1.5px,transparent 1.5px 6px) !important;  }
+.activity-tag[data-tex="4"] { background-image: repeating-linear-gradient(45deg,rgba(0,0,0,0.22) 0 1.5px,transparent 1.5px 6px),repeating-linear-gradient(-45deg,rgba(0,0,0,0.22) 0 1.5px,transparent 1.5px 6px) !important;  }
+[data-tex="5"] .ruler-fill, .adjust-chip-sub[data-tex="5"] i { background-image: repeating-linear-gradient(90deg,rgba(255,255,255,0.55) 0 2px,transparent 2px 5px) !important;  }
+.activity-tag[data-tex="5"] { background-image: repeating-linear-gradient(90deg,rgba(0,0,0,0.22) 0 2px,transparent 2px 5px) !important;  }
