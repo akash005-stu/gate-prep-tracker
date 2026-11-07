@@ -1985,3 +1985,12 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--cyan); }
 /* Softer hatching for the "still owed" gap so it reads as texture, not alarm */
 .goal-gap { opacity: 0.45; border-radius: 999px; }
 .gauge-gap { opacity: 0.5; }
+
+/* Readability fixes: no light-theme leftovers on the dark surfaces */
+.adjust-chip, .adjust-chip-sub { background: var(--panel-dim); color: var(--ink); border-color: var(--line); }
+.adjust-chip small { color: var(--ink-soft); }
+.adjust-chip-sub { border-left-width: 1px; }
+.adjust-chip-sub i { border: 1px solid rgba(255,255,255,0.18); }
+/* Solid red buttons: deeper red so white text passes contrast (AA) */
+.btn-primary, .auth-tab.is-active, .lb-seg-btn.is-active { background: #D92D24; color: #fff; }
+.btn-primary:hover { background: #DE3027; }
