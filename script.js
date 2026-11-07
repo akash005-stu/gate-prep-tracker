@@ -128,12 +128,6 @@ function emptyState() {
   return { version: STATE_VERSION, userName: "", restDays: [], showOnLeaderboard: true, subjects: [], logs: [], plan: null, schedule: null };
 }
 
-/* Lectures planned for each day, Monday first. All zeros or invalid = null (spread evenly). */
-function normWeek(w) {
-  if (!Array.isArray(w) || w.length !== 7) return null;
-  const a = w.map(n => Math.min(Math.max(Math.round(num(n)), 0), 20));
-  return a.some(n => n > 0) ? a : null;
-}
 function normPlan(p) {
   return p && typeof p === "object" && parseISO(p.start)
     ? { start: p.start, days: Math.min(Math.max(Math.round(num(p.days, 150)), 1), 1000) } : null;
@@ -185,7 +179,6 @@ function normalizeState(raw) {
       deadline,
       start: parseISO(s.start) ? s.start : today,
       color: cleanColor(s.color, i),
-      week: normWeek(s.week),
     });
   });
 
@@ -304,17 +297,6 @@ function studyDaysBetween(from, to) {
   return n;
 }
 
-/* First day the weekly pattern finishes `remaining` lectures, or null if it never does */
-function projectedFinish(week, remaining, from) {
-  let rem = remaining;
-  if (rem <= 0) return from;
-  for (let i = 0, d = from; i < 800; i++, d = addDays(d, 1)) {
-    rem -= week[(d.getDay() + 6) % 7];
-    if (rem <= 0) return d;
-  }
-  return null;
-}
-
 /* Lectures logged for a subject between two ISO dates (either end optional) */
 function loggedFor(id, fromISO, toISO) {
   let sum = 0;
@@ -363,19 +345,6 @@ function subjectStats(s, today) {
   }
   const weekDone = loggedFor(s.id, fromISO, isoOf(weekEnd));
 
-  // Fixed weekly pattern (e.g. from the 150-day plan): today's target, the weekly
-  // total, and how far ahead (negative) or behind (positive) the plan you are.
-  let todayGoal = null, lag = 0, finish = null;
-  if (s.week) {
-    let planned = 0;
-    for (let d = parseISO(s.start) || today, i = 0; d < today && i < 800; d = addDays(d, 1), i++) planned += s.week[(d.getDay() + 6) % 7];
-    planned = Math.min(planned, Math.max(s.total - s.base, 0));
-    lag = planned - loggedFor(s.id, null, isoOf(addDays(today, -1)));
-    todayGoal = complete ? 0 : s.week[(today.getDay() + 6) % 7];
-    weekGoal = complete || overdue ? 0 : s.week.reduce((a, b) => a + b, 0);
-    finish = complete ? null : projectedFinish(s.week, remaining, today);
-  }
-
   // How today's pace compares with the pace the plan started at
   const start = parseISO(s.start) || today;
   const sdOrig = Math.max(studyDaysBetween(start, deadline), 1);
@@ -385,7 +354,6 @@ function subjectStats(s, today) {
   let status;
   if (complete) status = { key: "done", label: "Done" };
   else if (overdue) status = { key: "overdue", label: "Past deadline" };
-  else if (s.week) status = lag >= 6 ? { key: "tight", label: "Behind" } : lag >= 2 ? { key: "speedup", label: "Slightly behind" } : lag <= -2 ? { key: "ahead", label: "Ahead" } : { key: "ontrack", label: "On track" };
   else if (pace > 6 || ratio > 1.5) status = { key: "tight", label: "Tight" };
   else if (ratio > 1.1) status = { key: "speedup", label: "Speed up" };
   else if (ratio <= 0.9 && done > s.base) status = { key: "ahead", label: "Ahead" };
@@ -393,7 +361,7 @@ function subjectStats(s, today) {
 
   return {
     done, doneToday, remaining, complete, overdue, deadline, daysToDeadline,
-    pace, weekGoal, weekDone, status, todayGoal, lag, finish,
+    pace, weekGoal, weekDone, status,
     pct: s.total > 0 ? Math.min(done / s.total, 1) * 100 : 0,
   };
 }
@@ -521,13 +489,11 @@ function updateCard(el, s, st) {
     week.textContent = st.weekGoal > 0
       ? `This week ${fmtNum(st.weekDone)} / ${st.weekGoal}${st.weekDone >= st.weekGoal ? " ✓" : ""}`
       : `This week ${fmtNum(st.weekDone)}`;
-    pace.textContent = st.todayGoal != null
-      ? `${st.lag > 0 ? `${fmtNum(st.lag)} behind plan` : st.lag < 0 ? `${fmtNum(-st.lag)} ahead of plan` : "On plan"} · ${st.finish ? `done about ${fmtShortDate(st.finish)}` : "won't finish at this pace"} · ${daysLeftText(st)}`
-      : `About ${fmtPace(st.pace)} a day · ${daysLeftText(st)} · by ${fmtShortDate(st.deadline)}`;
+    pace.textContent = `About ${fmtPace(st.pace)} a day · ${daysLeftText(st)} · by ${fmtShortDate(st.deadline)}`;
   }
 
   q(".js-today").textContent = fmtNum(st.doneToday);
-  q(".js-goal").textContent = st.todayGoal ? ` / ${st.todayGoal}` : "";
+  q(".js-goal").textContent = "";
   q(".js-minus").disabled = st.doneToday <= 0;
   q(".js-plus").disabled = st.complete;
 }
@@ -547,11 +513,10 @@ function renderSummary(rows, today) {
   planEl.hidden = !p;
   if (p) {
     const day = daysBetween(parseISO(p.start), today) + 1;
-    const behind = rows.reduce((n, r) => n + (!r.st.complete && r.st.lag > 0 ? r.st.lag : 0), 0);
     const phase = p.days === 150 ? PHASES.find(x => day <= x[0]) : null;
     planEl.textContent = day < 1 ? `Plan starts ${fmtShortDate(parseISO(p.start))}`
       : day > p.days ? "Plan period is over"
-      : `Day ${day} of ${p.days} · Week ${Math.ceil(day / 7)} of ${Math.ceil(p.days / 7)}${phase ? ` · ${phase[1]}` : ""}${behind ? ` · ${fmtNum(behind)} to catch up` : ""}`;
+      : `Day ${day} of ${p.days} · Week ${Math.ceil(day / 7)} of ${Math.ceil(p.days / 7)}${phase ? ` · ${phase[1]}` : ""}`;
   }
 
   const open = rows.filter(r => !r.st.complete && !r.st.overdue);
@@ -644,14 +609,14 @@ function renderSchedule(today) {
   });
 }
 
-/* One tap: the three subjects, daily pattern and 150-day window from the plan PDF.
+/* One tap: the three subjects and 150-day window from the plan PDF.
    Lectures finish on day 133; days 134–150 stay free as buffer. */
 function loadPlan() {
   const t = todayDate(), start = isoOf(t), deadline = isoOf(addDays(t, 132));
-  [["AEM", 163, [1, 1, 1, 1, 1, 2, 2], "#D99A2B"],
-   ["Engineering Mathematics", 268, [2, 2, 2, 2, 2, 2, 2], "#E85D3D"],
-   ["Solid Mechanics", 173, [1, 1, 1, 1, 1, 2, 2], "#2FA792"]]
-    .forEach(([name, total, week, color]) => state.subjects.push({ id: uid(), name, total, base: 0, deadline, start, color, week }));
+  [["AEM", 163, "#D99A2B"],
+   ["Engineering Mathematics", 268, "#E85D3D"],
+   ["Solid Mechanics", 173, "#2FA792"]]
+    .forEach(([name, total, color]) => state.subjects.push({ id: uid(), name, total, base: 0, deadline, start, color }));
   state.plan = { start, days: 150 };
   saveState();
   render();
@@ -726,41 +691,6 @@ function renderSwatches() {
   });
 }
 
-const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
-const DAY_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
-function renderWeekInputs(week) {
-  const wrap = $("sub-week");
-  wrap.innerHTML = "";
-  DAY_LETTERS.forEach((l, i) => {
-    const lab = document.createElement("label");
-    lab.className = "wk-d";
-    const sp = document.createElement("span"); sp.textContent = l;
-    const inp = document.createElement("input");
-    inp.type = "number"; inp.min = "0"; inp.max = "20"; inp.step = "1"; inp.inputMode = "numeric";
-    inp.setAttribute("aria-label", DAY_FULL[i]);
-    inp.value = week ? week[i] : "";
-    lab.append(sp, inp);
-    wrap.appendChild(lab);
-  });
-}
-function readWeek() {
-  return normWeek(Array.from($("sub-week").querySelectorAll("input")).map(i => num(i.value)));
-}
-/* Fill the pattern from total, done and deadline; weekends carry the extra */
-function suggestWeek() {
-  const total = Math.round(num($("sub-total").value)), base = Math.max(Math.round(num($("sub-base").value)), 0);
-  const dl = parseISO($("sub-deadline").value);
-  if (total < 1 || !dl) { showToast("Enter the total and a deadline first."); return; }
-  const remaining = Math.max(total - base - (editingId ? loggedFor(editingId) : 0), 0);
-  const weeks = Math.max(daysBetween(todayDate(), dl) + 1, 1) / 7;
-  const w = Math.min(Math.ceil(remaining / weeks - 1e-9), 140);
-  const arr = Array(7).fill(Math.floor(w / 7));
-  [5, 6, 0, 1, 2, 3, 4].slice(0, w % 7).forEach(i => arr[i]++);
-  renderWeekInputs(arr);
-  updateSubjectPreview();
-}
-
 function openSubjectModal(id) {
   editingId = id || null;
   const s = id ? subjectById(id) : null;
@@ -776,7 +706,6 @@ function openSubjectModal(id) {
   $("sub-error").hidden = true;
   chosenColor = s ? s.color : nextColor();
   renderSwatches();
-  renderWeekInputs(s ? s.week : null);
   updateSubjectPreview();
   openModal("subject-modal");
   $("sub-name").focus();
@@ -797,12 +726,6 @@ function updateSubjectPreview() {
   const today = todayDate();
   if (dl < today) { el.textContent = "That date has already passed."; return; }
 
-  const wk = readWeek();
-  if (wk) {
-    const f = projectedFinish(wk, remaining, today);
-    el.textContent = `${wk.reduce((a, b) => a + b, 0)} a week, ${f ? `done about ${fmtShortDate(f)}${f > dl ? ", after your deadline" : ""}` : "never finishes at this pace"}.`;
-    return;
-  }
   const sd = studyDaysBetween(today, dl) || daysBetween(today, dl) + 1;
   const perDay = remaining / sd;
   const perWeek = Math.ceil(perDay * studyDaysPerWeek() - 1e-9);
@@ -830,9 +753,9 @@ function handleSubjectSubmit(e) {
   if (editingId) {
     const s = subjectById(editingId);
     if (!s) { closeModal("subject-modal"); return; }
-    s.name = name; s.total = total; s.base = base; s.deadline = deadlineStr; s.color = chosenColor; s.week = readWeek();
+    s.name = name; s.total = total; s.base = base; s.deadline = deadlineStr; s.color = chosenColor; delete s.week;
   } else {
-    state.subjects.push({ id: uid(), name, total, base, deadline: deadlineStr, start: isoOf(today), color: chosenColor, week: readWeek() });
+    state.subjects.push({ id: uid(), name, total, base, deadline: deadlineStr, start: isoOf(today), color: chosenColor });
   }
   saveState();
   closeModal("subject-modal");
@@ -1471,8 +1394,6 @@ document.addEventListener("DOMContentLoaded", () => {
   $("add-subject-btn").addEventListener("click", () => openSubjectModal(null));
   $("empty-add-btn").addEventListener("click", () => openSubjectModal(null));
   $("empty-plan-btn").addEventListener("click", loadPlan);
-  $("sub-suggest").addEventListener("click", suggestWeek);
-  $("sub-week").addEventListener("input", updateSubjectPreview);
   $("subject-form").addEventListener("submit", handleSubjectSubmit);
   $("sub-cancel-btn").addEventListener("click", () => closeModal("subject-modal"));
   $("sub-delete-btn").addEventListener("click", handleSubjectDelete);

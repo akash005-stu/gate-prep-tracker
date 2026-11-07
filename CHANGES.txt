@@ -1,3 +1,16 @@
+GOAL SYSTEM RESTORED TO SELF-ADJUSTING (v7)
+- Removed the fixed "Lectures per day" (Mon to Sun) pattern. Goals are worked out
+  again from what is left divided by the study days until each deadline, so
+  missing a day spreads the work over the days that remain.
+- Cards show "About x a day" and "This week done / goal" again, with the status
+  chips On track / Ahead / Speed up / Tight.
+- Subjects, lecture totals, done counts, deadlines and logs are untouched. Any
+  daily pattern saved earlier is simply ignored and dropped on the next save.
+- "Use the 150-day plan" still adds AEM (163), Engineering Mathematics (268) and
+  Solid Mechanics (173), finishing on day 133, but without a fixed daily pattern.
+- Plan day/week/phase line, schedule and plan rules are unchanged.
+- After pushing, hard refresh (Ctrl+Shift+R). Service worker cache is now v7.
+
 150-DAY PLAN SUPPORT (v6)
 - Each subject now has an optional "Lectures per day" pattern (Mon to Sun). Today's
   target, the weekly target, "ahead/behind plan" and the projected finish date all
