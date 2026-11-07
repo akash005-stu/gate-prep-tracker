@@ -1,3 +1,17 @@
+LATEST: MATTE DARK THEME + TARGET STREAK
+========================================
+- Look only: near-black matte surfaces with fine grain, red accent, vivid
+  per-subject colours (textures kept so subjects never rely on colour alone),
+  Space Grotesk numerals, drifting colour glows, springy hover/entrance motion,
+  count-up numbers, animated bars, confetti on hitting the daily target.
+  All animation respects prefers-reduced-motion. No feature was removed.
+- New streak card (Duolingo style): a day counts only when its daily target is
+  hit. Flame lit / pending / "at risk" (after 6 pm) / cold, current + best streak,
+  7-day check strip. The hero pill and the leaderboard streak now use the same
+  target-based rule. No new stored data, so Firestore and rules are unchanged.
+- Service worker cache bumped to v6. FILES CHANGED: index.html, style.css,
+  script.js, manifest.json, service-worker.js, CHANGES.txt
+
 LATEST: SIMPLE PLANNING + MONOCHROME
 ===================================
 1. Plan settings now asks for only two things: subjects with their number of

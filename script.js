@@ -11,7 +11,7 @@ const LEGACY_SUBJECTS = {
   aem:   { name: "Applied Engineering Mechanics", short: "AEM" },
   som:   { name: "Strength of Materials", short: "SOM" },
 };
-const SUBJECT_SHADES = ["#1F1F1F", "#6A6A6A", "#3A3A3A", "#8C8C8C", "#555555", "#A3A3A3"];
+const SUBJECT_SHADES = ["#FF5A4D", "#FFB020", "#2DD4BF", "#4C8DFF", "#B07CFF", "#F472B6"];
 const SUBJECT_META = {};
 
 function shortLabel(name) {
@@ -227,7 +227,7 @@ function courseData() {
    (color-mix), so setting these three vars re-themes the whole app.
    ========================================================= */
 const THEME_PRESETS = {
-  mono: { label: "Light", bg: "#F5F5F3", cyan: "#171717", cyanDim: "#8A8A8A" },
+  mono: { label: "Matte", bg: "#0A0A0B", cyan: "#FF4438", cyanDim: "#8B8B92" },
 };
 
 function hexToHsl(hex) {
@@ -480,20 +480,49 @@ function expectedByDate(date) {
 /* =========================================================
    STREAK
    ========================================================= */
-function currentStreak() {
-  const daysWithLogs = new Set(state.logs.map(l => l.date));
-  let streak = 0;
-  let cursor = todayDate();
-
-  if (!daysWithLogs.has(formatISODate(cursor))) {
-    cursor = new Date(cursor.getTime() - DAY_MS);
+/* A day counts toward the streak when its daily target was hit (done >= target).
+   Days a plan change later made harder still count if they were celebrated at the
+   time. Days with no target and no logs are rest days: they neither add nor break. */
+function streakDayStatus(d) {
+  const key = formatISODate(d);
+  const target = dailyTarget(d);
+  const done = completedOnDate(key);
+  if (target > 0) {
+    const celebrated = Array.isArray(state.celebratedDates) && state.celebratedDates.includes(key);
+    return (done >= target || (celebrated && done > 0)) ? "hit" : (done > 0 ? "partial" : "miss");
   }
-  while (daysWithLogs.has(formatISODate(cursor))) {
-    streak++;
-    cursor = new Date(cursor.getTime() - DAY_MS);
-  }
-  return streak;
+  return done > 0 ? "hit" : "rest";
 }
+
+function streakInfo() {
+  const today = todayDate();
+  const todayStatus = streakDayStatus(today);
+  const todayHit = todayStatus === "hit";
+  let cursor = todayHit ? today : new Date(today.getTime() - DAY_MS);
+  let current = 0;
+  for (let i = 0; i < 1100; i++) {
+    const st = streakDayStatus(cursor);
+    if (st === "hit") current++;
+    else if (st !== "rest") break;
+    cursor = new Date(cursor.getTime() - DAY_MS);
+  }
+  // Longest run, scanning from the first logged day
+  let best = 0, run = 0;
+  const dates = state.logs.map(l => l.date).filter(Boolean).sort();
+  if (dates.length) {
+    for (let d = parseISODate(dates[0]); d <= today; d = new Date(d.getTime() + DAY_MS)) {
+      const st = streakDayStatus(d);
+      if (st === "hit") { run++; best = Math.max(best, run); }
+      else if (st !== "rest" && !(d.getTime() === today.getTime())) run = 0;
+    }
+  }
+  best = Math.max(best, current);
+  const target = dailyTarget(today);
+  const remaining = Math.max(target - completedOnDate(formatISODate(today)), 0);
+  return { current, best, todayHit, remaining, atRisk: !todayHit && current > 0 && new Date().getHours() >= 18 };
+}
+
+function currentStreak() { return streakInfo().current; }
 
 /* =========================================================
    SUGGESTIONS
@@ -668,7 +697,6 @@ function moveNavIndicator() {
 
 /* Short confetti burst when the day's target is hit */
 function launchConfetti() {
-  return; // calm mode: no confetti
   if (REDUCED_MOTION) return;
   const canvas = document.createElement("canvas");
   canvas.className = "confetti";
@@ -681,7 +709,7 @@ function launchConfetti() {
   ctx.scale(dpr, dpr);
 
   const accent = getComputedStyle(document.documentElement).getPropertyValue("--cyan").trim() || "#79CBEA";
-  const colors = ["#E85D3D", "#D99A2B", "#2FA792", accent, "#ffffff"];
+  const colors = ["#FF5A4D", "#FFB020", "#2DD4BF", "#4C8DFF", accent, "#F2F2F0"];
   const parts = Array.from({ length: 90 }, () => ({
     x: W / 2 + (Math.random() - 0.5) * W * 0.3,
     y: H * 0.6,
@@ -1061,14 +1089,64 @@ function renderHero() {
   streakEl.textContent = `${streak} day streak`;
   streakEl.classList.toggle("streak-hot", streak > 0);
   document.getElementById("tagline").textContent = streak > 0
-    ? "Keep the streak alive — today's work is all that's in front of you."
-    : "A fresh start today. One session is all it takes to get going.";
+    ? "Keep the streak alive — hit today's target and it grows."
+    : "A fresh start today. Hit your daily target to light the flame.";
+  try { renderStreakCard(); } catch (err) { console.error("Streak card failed:", err); }
 
   document.getElementById("today-date").textContent = today.toLocaleDateString(undefined, {
     weekday: "long", month: "long", day: "numeric",
   });
 
   document.getElementById("edit-name-btn").textContent = state.userName ? "Edit name" : "Set your name";
+}
+
+
+/* =========================================================
+   STREAK CARD — Duolingo-style flame. Lights up when today's
+   target is hit; the week strip shows which days counted.
+   ========================================================= */
+function renderStreakCard() {
+  const card = document.getElementById("streak-card");
+  if (!card) return;
+  const info = streakInfo();
+  const today = todayDate();
+  card.classList.toggle("is-lit", info.todayHit);
+  card.classList.toggle("is-pending", !info.todayHit && info.current > 0 && !info.atRisk);
+  card.classList.toggle("is-risk", info.atRisk);
+  card.classList.toggle("is-cold", info.current === 0 && !info.todayHit);
+
+  setCount(document.getElementById("streak-count"), info.current, { ms: 900 });
+  document.getElementById("streak-unit").textContent = "day streak";
+  document.getElementById("streak-best").textContent = `Best ${info.best}`;
+
+  let msg;
+  if (info.todayHit) msg = info.current > 1 ? `Target hit. ${info.current} days in a row. Come back tomorrow.` : "Target hit. The flame is lit. Come back tomorrow.";
+  else if (info.atRisk) msg = `Streak at risk. ${fmtNum(info.remaining)} ${plural(info.remaining, "lecture")} to go before midnight.`;
+  else if (info.current > 0) msg = `${fmtNum(info.remaining)} ${plural(info.remaining, "lecture")} today keeps your ${info.current}-day streak going.`;
+  else msg = "Hit today's target to start a streak.";
+  document.getElementById("streak-msg").textContent = msg;
+
+  const week = document.getElementById("streak-week");
+  week.innerHTML = "";
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * DAY_MS);
+    const st = streakDayStatus(d);
+    const dot = document.createElement("div");
+    dot.className = `streak-day st-${st}${i === 0 ? " is-today" : ""}`;
+    dot.style.setProperty("--i", 6 - i);
+    dot.innerHTML = `<span class="streak-dot">${st === "hit" ? "<svg viewBox='0 0 24 24' aria-hidden='true'><path d='M5 12.5l4.2 4.2L19 7'/></svg>" : ""}</span><span class="streak-dow">${d.toLocaleDateString(undefined, { weekday: "narrow" })}</span>`;
+    dot.title = `${formatISODate(d)}: ${st === "hit" ? "target hit" : st === "rest" ? "rest day" : st === "partial" ? "partly done" : "target missed"}`;
+    week.appendChild(dot);
+  }
+}
+
+function celebrateStreak() {
+  const card = document.getElementById("streak-card");
+  if (!card || REDUCED_MOTION) return;
+  card.classList.remove("burst");
+  void card.offsetWidth;
+  card.classList.add("burst");
+  setTimeout(() => card.classList.remove("burst"), 1400);
 }
 
 /* =========================================================
@@ -1693,8 +1771,11 @@ function renderTodayFocus() {
   if (completed >= target && target > 0 && !state.celebratedDates.includes(todayStr)) {
     state.celebratedDates.push(todayStr);
     saveState();
-    showToast("Today's target is done. Nice work — that's a wrap for today.");
+    const sNow = streakInfo().current;
+    showToast(sNow > 1 ? `Target done. ${sNow}-day streak — keep it burning.` : "Target done. Streak started — nice work.");
     launchConfetti();
+    renderStreakCard();
+    celebrateStreak();
   }
 }
 
@@ -2383,9 +2464,9 @@ function lbDisplayName(e) {
 /* Medal artwork — inline SVG so it looks the same everywhere */
 function medalSvg(rank, size) {
   const palette = {
-    1: { face: "#E8E8E8", rim: "#2B2B2B", ribbonA: "#2B2B2B", ribbonB: "#555555", ink: "#111111" },
-    2: { face: "#CFCFCF", rim: "#6A6A6A", ribbonA: "#6A6A6A", ribbonB: "#8A8A8A", ink: "#333333" },
-    3: { face: "#B5B5B5", rim: "#555555", ribbonA: "#8A8A8A", ribbonB: "#A3A3A3", ink: "#222222" },
+    1: { face: "#FFD166", rim: "#B8860B", ribbonA: "#FF4438", ribbonB: "#B8261C", ink: "#5A3C00" },
+    2: { face: "#D9DDE3", rim: "#8A93A0", ribbonA: "#4C8DFF", ribbonB: "#2F63BF", ink: "#2B3340" },
+    3: { face: "#E0A06A", rim: "#9A5B28", ribbonA: "#2DD4BF", ribbonB: "#1B9C8C", ink: "#4A2A0E" },
   };
   const p = palette[rank] || palette[3];
   const h = Math.round(size * 64 / 48);
@@ -2469,7 +2550,7 @@ function lbUpdateRow(li, e, now) {
   li.classList.toggle("is-self", e.self);
   li.classList.toggle("is-gold", e.medal === 1);
   li.classList.toggle("is-idle", !e.active);
-  li.style.setProperty("--bar", e.medal === 1 ? "#111111" : e.self ? "var(--maths)" : "var(--som)");
+  li.style.setProperty("--bar", e.medal === 1 ? "#FFB020" : e.self ? "var(--cyan)" : "var(--som)");
 
   f("rank").textContent = String(e.rank);
   f("rank").hidden = e.medal > 0;

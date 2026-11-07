@@ -7,7 +7,8 @@
 
 <!-- PWA / installability -->
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#F5F5F3" />
+<meta name="theme-color" content="#0A0A0B" />
+<meta name="color-scheme" content="dark" />
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
 <meta name="mobile-web-app-capable" content="yes" />
@@ -17,7 +18,7 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css" />
 
 <!-- Firebase (compat SDKs — plain <script> tags, no build step needed) -->
@@ -124,6 +125,24 @@
     </section>
 
     <main>
+
+      <!-- Streak: lights up when today's target is hit -->
+      <section class="card reveal card-streak" id="streak-card" style="--spine: var(--cyan)">
+        <div class="streak-main">
+          <div class="streak-flame" aria-hidden="true">
+            <svg viewBox="0 0 64 80">
+              <path class="flame-outer" d="M32 3c3 14 22 24 22 45a22 22 0 0 1-44 0c0-9 4-15 9-20 1 7 4 11 8 12-3-14 0-28 5-37z"/>
+              <path class="flame-inner" d="M32 38c2 8 11 12 11 22a11 11 0 0 1-22 0c0-5 3-8 6-11 0 4 2 6 4 7-1-7 0-13 1-18z"/>
+            </svg>
+          </div>
+          <div class="streak-text">
+            <div class="streak-figure"><span id="streak-count" class="streak-count">0</span><span id="streak-unit" class="streak-unit">day streak</span></div>
+            <p id="streak-msg" class="streak-msg">Hit today's target to start a streak.</p>
+          </div>
+          <span id="streak-best" class="pill streak-best">Best 0</span>
+        </div>
+        <div id="streak-week" class="streak-week" aria-label="Last 7 days of streak"><!-- filled by JS --></div>
+      </section>
 
       <!-- Catch-up: shown after the plan has been re-balanced (or when it is ready to be) -->
       <section class="card reveal card-adjust" id="adjust-card" style="--spine: var(--som)" hidden>
