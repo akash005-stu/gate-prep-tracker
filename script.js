@@ -1059,6 +1059,7 @@ function openModalFromTimerSession(session) {
 function render() {
   maybeAutoRebalance();
   renderHero();
+  try { renderTodayCard(); } catch (err) { console.error("Today card failed:", err); }
   try { renderAdjustCard(); } catch (err) { console.error("Plan card failed:", err); }
   renderGoal();
   renderTodayFocus();
@@ -1439,13 +1440,13 @@ function undoLastAdjustment() {
 function adjustChipsHtml(p) {
   const weeklySum = Object.keys(SUBJECT_META).reduce((s, k) => s + (Number(p.weekly[k]) || 0), 0);
   const subs = Object.keys(SUBJECT_META).map(k => (
-    `<span class="adjust-chip adjust-chip-sub" data-tex="${SUBJECT_META[k].tex}" style="--chip:${SUBJECT_META[k].color}"><i></i>${escapeHtml(SUBJECT_META[k].short)}<strong>${fmtNum(p.weekly[k])}/wk</strong></span>`
+    `<span class="adjust-chip adjust-chip-sub" data-tex="${SUBJECT_META[k].tex}" style="--chip:${SUBJECT_META[k].color}"><i></i>${escapeHtml(SUBJECT_META[k].short)}<strong>${fmtNum(p.weekly[k])} a week</strong></span>`
   )).join("");
   return `
-    <span class="adjust-chip"><small>Weekdays</small><strong>${fmtNum(p.weekdayTarget)}/day</strong></span>
-    <span class="adjust-chip"><small>Weekends</small><strong>${fmtNum(p.weekendTarget)}/day</strong></span>
-    <span class="adjust-chip"><small>Per week</small><strong>${fmtNum(weeklySum)}</strong></span>
-    <span class="adjust-chip"><small>Plan ends</small><strong>${fmtDate(parseISODate(p.finishDate))}</strong></span>
+    <span class="adjust-chip"><small>Monday to Friday</small><strong>${fmtNum(p.weekdayTarget)} ${plural(p.weekdayTarget, "lecture")} a day</strong></span>
+    <span class="adjust-chip"><small>Saturday and Sunday</small><strong>${fmtNum(p.weekendTarget)} ${plural(p.weekendTarget, "lecture")} a day</strong></span>
+    <span class="adjust-chip"><small>Every week</small><strong>${fmtNum(weeklySum)} lectures</strong></span>
+    <span class="adjust-chip"><small>Everything done by</small><strong>${fmtDate(parseISODate(p.finishDate))}</strong></span>
     <div class="adjust-subs">${subs}</div>
   `;
 }
@@ -1474,10 +1475,10 @@ function renderAdjustCard() {
   if (overLimit) {
     // Over the limit but not re-balanced (auto-adjust off, paused, or still syncing)
     const preview = buildCatchupPlan();
-    title.textContent = `Backlog is over ${limit}`;
-    pill.textContent = "Ready for a reset";
+    title.textContent = `You are ${fmtNum(g.lag)} lectures behind`;
+    pill.textContent = "Reset available";
     pill.classList.add("pill-warn");
-    summary.textContent = `${fmtNum(g.lag)} lectures have piled up. You don't have to carry them as a debt: re-balancing spreads what is left across the time you have, with fresh daily and weekly targets.`;
+    summary.textContent = `That is more than your ${limit}-lecture limit. A reset drops the backlog and spreads the ${fmtNum(g.remaining)} lectures still left over the days you have. Here is what each day would look like:`;
     chips.innerHTML = preview ? adjustChipsHtml(preview) : "";
     if (!preview) {
       note.textContent = "Your target date leaves too little room to plan. Move it later in Plan settings and try again.";
@@ -1496,7 +1497,7 @@ function renderAdjustCard() {
   pill.textContent = "Fresh start";
   pill.classList.add("pill-good");
   summary.textContent =
-    `On ${fmtDate(parseISODate(last.createdOn))}, ${fmtNum(last.lagCleared)} lectures had piled up. Instead of carrying them as a debt, the plan now spreads the ${fmtNum(last.remaining)} lectures that were left across the time you have, finishing around ${fmtDate(parseISODate(last.finishDate))}.`;
+    `On ${fmtDate(parseISODate(last.createdOn))} you were ${fmtNum(last.lagCleared)} lectures behind, so the plan was reset. Nothing from the past is owed. This is your daily plan now:`;
   chips.innerHTML = adjustChipsHtml(last);
   // How does the new daily pace compare with the plan it replaced?
   const prev = list.length > 1 ? list[list.length - 2] : null;
@@ -1506,7 +1507,7 @@ function renderAdjustCard() {
   const newPerWeek = last.weekdayTarget * 5 + last.weekendTarget * 2;
   let pace;
   if (Math.abs(newPerWeek - prevPerWeek) < 0.01) {
-    pace = "Your usual daily pace still gets everything done in time, so the only change is that the backlog is gone.";
+    pace = "Your usual pace still finishes everything on time.";
   } else if (newPerWeek > prevPerWeek) {
     pace = `That is a little more per week than before (${fmtNum(newPerWeek)} instead of ${fmtNum(prevPerWeek)}), spread so it stays doable.`;
   } else {
@@ -1514,7 +1515,7 @@ function renderAdjustCard() {
   }
   note.textContent = last.heavy
     ? "This is a heavy load. If it feels like too much, move your target date later in Plan settings and the plan will ease off."
-    : `You're back on schedule and nothing from the past is owed. ${pace}`;
+    : `You are back on schedule. ${pace}`;
   actionBtn.hidden = true;
   undoBtn.hidden = false;
 }
@@ -1578,8 +1579,8 @@ function renderGoal() {
   const headline = document.getElementById("goal-headline");
   const targetLabel = mainTargetDate().toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
   headline.textContent = g.daysLeft > 0
-    ? `Ultimate goal: finish all ${g.total} lectures by ${targetLabel}, ${g.daysLeft} ${plural(g.daysLeft, "day")} from now.`
-    : `Ultimate goal: finish all ${g.total} lectures by ${targetLabel}.`;
+    ? `Goal: finish all ${g.total} lectures by ${targetLabel} (${g.daysLeft} ${plural(g.daysLeft, "day")} left).`
+    : `Goal: finish all ${g.total} lectures by ${targetLabel}.`;
 
   // Pill + centre of the gauge
   const pill = document.getElementById("goal-pill");
@@ -1619,7 +1620,7 @@ function renderGoal() {
   if (g.started && g.expected > 0) {
     const adhPct = Math.round(adherence * 100);
     setCount(adhEl, adhPct, { format: v => `${Math.round(v)}%` });
-    document.getElementById("goal-adherence-sub").textContent = g.done > g.expected + 0.0001 ? "of the plan so far, and more" : "of the plan so far";
+    document.getElementById("goal-adherence-sub").textContent = g.done > g.expected + 0.0001 ? "of what you should have done, and more" : "of what you should have done";
   } else {
     setStat("goal-adherence", "—", "goal-adherence-sub", g.started ? "" : "starts with your plan");
   }
@@ -1641,8 +1642,8 @@ function renderGoal() {
     setCount(needEl, need, { format: v => `${v.toFixed(1)}/day` });
     const sub = document.getElementById("goal-need-sub");
     sub.textContent = above
-      ? `above the ${planPace.toFixed(1)}/day plan`
-      : `within the ${planPace.toFixed(1)}/day plan`;
+      ? `per day, faster than your ${planPace.toFixed(1)}/day plan`
+      : `per day, within your ${planPace.toFixed(1)}/day plan`;
     sub.className = above ? "bad" : "good";
   }
 
@@ -1674,7 +1675,7 @@ function renderGoal() {
   } else if (!g.started) {
     note.textContent = `Your plan begins on ${planStart().toLocaleDateString(undefined, { day: "numeric", month: "long" })}. Nothing is owed yet.`;
   } else if (g.lag > catchupThreshold()) {
-    note.textContent = `${fmtNum(g.lag)} lectures have piled up, past the ${catchupThreshold()}-lecture limit. The plan card above shows how to start fresh.`;
+    note.textContent = `${fmtNum(g.lag)} lectures have piled up, past the ${catchupThreshold()}-lecture limit. Use the reset card above to start fresh.`;
   } else if (g.lag > 0.0001) {
     // A realistic window: small gaps in a week, big ones spread over more time
     const horizon = g.lag <= 14 ? { days: 7, label: "a week" }
@@ -1730,6 +1731,118 @@ function renderGoalSubjects(g) {
     const pct = sub.expected > 0 ? Math.min((sub.done / sub.expected) * 100, 100) : (g.started ? 100 : 0);
     setBar(row.querySelector(".ruler-fill"), pct);
   });
+}
+
+/* Spreads today's remaining lectures over subjects, giving each lecture to the
+   subject furthest behind its weekly target. Returns { subjectKey: count }. */
+function allocateToday(units) {
+  const cd = courseData();
+  const today = todayDate();
+  const wi = weekIndexFor(today);
+  const wStart = weekStartFor(wi), wEnd = weekEndFor(wi);
+  const info = {};
+  Object.keys(cd).forEach(k => {
+    info[k] = {
+      gap: cd[k].weeklyTarget - subjectDoneInRange(k, wStart, wEnd),
+      left: Math.max(cd[k].total - completedForSubject(k), 0),
+    };
+  });
+  const out = {};
+  for (let i = 0; i < units; i++) {
+    let best = null;
+    Object.keys(info).forEach(k => {
+      const used = out[k] || 0;
+      if (info[k].left - used < 1) return;
+      const score = info[k].gap - used;
+      if (!best || score > best.score || (score === best.score && info[k].left > info[best.k].left)) best = { k, score };
+    });
+    if (!best) break;
+    out[best.k] = (out[best.k] || 0) + 1;
+  }
+  return out;
+}
+
+/* The "what do I do today" card: one big number, what is done, what is left,
+   which subjects to pick, and one plain sentence about being behind or ahead. */
+function renderTodayCard() {
+  const today = todayDate();
+  const g = computeGoalStatus();
+  const target = dailyTarget(today);
+  const done = completedOnDate(formatISODate(today));
+  const left = Math.max(target - done, 0);
+  const limit = catchupThreshold();
+
+  const set = (id, text) => { document.getElementById(id).textContent = text; };
+  set("today-date", today.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }));
+  const head = document.getElementById("today-headline");
+  const splitWrap = document.getElementById("today-split-wrap");
+  splitWrap.hidden = true;
+
+  let pct = 0, sub = "", advice = "";
+  if (g.complete) {
+    head.textContent = "Every lecture is done";
+    sub = "Nothing left to do. The goal is complete.";
+    pct = 100;
+  } else if (!g.started) {
+    head.textContent = "Your plan has not started yet";
+    sub = `It begins on ${planStart().toLocaleDateString(undefined, { day: "numeric", month: "long" })}. Nothing to do before then.`;
+  } else if (target <= 0) {
+    head.textContent = "No lectures planned today";
+    sub = done > 0 ? `You still did ${fmtNum(done)}. That puts you ahead.` : "Take the day off, or get ahead if you feel like it.";
+    pct = 100;
+  } else {
+    head.innerHTML = `Do <span class="today-big">${fmtNum(target)}</span> ${plural(target, "lecture")} today`;
+    pct = Math.min(done / target * 100, 100);
+    sub = left > 0
+      ? `${fmtNum(done)} done, ${fmtNum(left)} to go.`
+      : `Target reached (${fmtNum(done)} done). Anything extra puts you further ahead.`;
+    const units = Math.ceil(left - 1e-9);
+    const split = units > 0 ? allocateToday(units) : {};
+    const keys = Object.keys(split);
+    if (keys.length) {
+      const cd = courseData();
+      document.getElementById("today-split").innerHTML = keys.map(k =>
+        `<span class="today-chip" data-tex="${cd[k].tex}" style="--chip:${cd[k].color}"><i></i>${escapeHtml(cd[k].short)}<strong>${split[k]}</strong></span>`
+      ).join("");
+      splitWrap.hidden = false;
+    }
+  }
+
+  if (g.started && !g.complete) {
+    // Lectures owed from BEFORE today (today's own target is not "behind", it is today's job)
+    const back = g.lag - (target - done);
+    if (back > limit) {
+      advice = `You are ${fmtNum(back)} lectures behind, past your ${limit}-lecture limit. Reset the plan below so you start fresh instead of catching up on everything.`;
+    } else if (back > 0.0001) {
+      const horizon = back <= 14 ? { days: 7, label: "a week" } : back <= 35 ? { days: 14, label: "two weeks" } : { days: 28, label: "four weeks" };
+      const extra = Math.ceil((back / horizon.days) * 2) / 2;
+      advice = `You are ${fmtNum(back)} ${plural(back, "lecture")} behind from earlier days. To catch up in ${horizon.label}, do ${fmtNum(extra)} extra a day on top of today's ${fmtNum(target)}, so ${fmtNum(target + extra)} a day.`;
+    } else if (back < -0.0001) {
+      advice = `You are ${fmtNum(-back)} ${plural(-back, "lecture")} ahead of plan. Keep doing ${fmtNum(target)} a day to stay ahead.`;
+    } else {
+      advice = `You are exactly on plan. Doing ${fmtNum(target)} today keeps you there.`;
+    }
+  }
+
+  set("today-sub", sub);
+  set("today-advice", advice);
+  document.getElementById("today-advice").hidden = !advice;
+  setBar(document.getElementById("today-bar"), pct);
+
+  // This week at a glance
+  const weekEl = document.getElementById("today-week");
+  if (g.started && !g.complete) {
+    const wi = weekIndexFor(today);
+    const wS = weekStartFor(wi), wE = weekEndFor(wi);
+    const keys = Object.keys(SUBJECT_META);
+    const weekDone = keys.reduce((s, k) => s + subjectDoneInRange(k, wS, wE), 0);
+    const weekTarget = totalWeeklyTargetOn(today);
+    const daysLeft = 7 - ((today.getDay() + 6) % 7);
+    weekEl.textContent = `This week: ${fmtNum(weekDone)} of ${fmtNum(weekTarget)} lectures done, ${daysLeft} ${plural(daysLeft, "day")} left including today.`;
+    weekEl.hidden = false;
+  } else {
+    weekEl.hidden = true;
+  }
 }
 
 function renderTodayFocus() {
@@ -2887,6 +3000,7 @@ function initApp(user) {
       } else {
         // New account: keep the UI usable and create the document in the background.
         state = defaultState();
+        state.config.beginDate = formatISODate(todayDate());   // a new plan starts today, so day one is not 'behind'
         derivePlan(state.config);
         cloudReady = true;
         revealApp(user);
@@ -2953,6 +3067,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("sign-out-btn").addEventListener("click", handleSignOut);
 
   document.getElementById("log-study-btn").addEventListener("click", openModal);
+  document.getElementById("today-log-btn").addEventListener("click", openModal);
   document.getElementById("modal-close-btn").addEventListener("click", closeModal);
   document.getElementById("modal-cancel-btn").addEventListener("click", closeModal);
   document.getElementById("log-modal").addEventListener("click", (e) => {

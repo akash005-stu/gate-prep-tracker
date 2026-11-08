@@ -1994,3 +1994,32 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--cyan); }
 /* Solid red buttons: deeper red so white text passes contrast (AA) */
 .btn-primary, .auth-tab.is-active, .lb-seg-btn.is-active { background: #D92D24; color: #fff; }
 .btn-primary:hover { background: #DE3027; }
+
+
+/* =========================================================
+   TODAY CARD: the plain "what do I do today" answer
+   ========================================================= */
+.card-today { padding-top: 22px; padding-bottom: 22px; }
+.today-eyebrow { margin: 0 0 6px; font-size: 0.85rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-soft); }
+.today-headline { margin: 0 0 6px; font-size: 1.5rem; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; }
+.today-big { font-family: var(--display, inherit); font-size: 2.6rem; font-weight: 700; line-height: 1; padding: 0 4px; color: var(--cyan); }
+.today-sub { margin: 0 0 14px; font-size: 1.05rem; color: var(--ink); }
+.today-split-wrap { margin-top: 16px; }
+.today-label { margin: 0 0 8px; font-size: 0.85rem; color: var(--ink-soft); }
+.today-split { display: flex; flex-wrap: wrap; gap: 8px; }
+.today-chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-dim); font-weight: 500; }
+.today-chip i { width: 14px; height: 14px; border-radius: 3px; background: var(--chip, var(--som)); display: inline-block; border: 1px solid rgba(255,255,255,0.18); }
+.today-chip strong { font-size: 1.05rem; }
+.today-chip[data-tex="1"] i { background-image: repeating-linear-gradient(45deg,rgba(255,255,255,0.55) 0 2px,transparent 2px 6px); }
+.today-chip[data-tex="2"] i { background-image: radial-gradient(rgba(255,255,255,0.55) 1.3px,transparent 1.7px); background-size: 7px 7px; }
+.today-chip[data-tex="3"] i { background-image: repeating-linear-gradient(0deg,rgba(255,255,255,0.55) 0 2px,transparent 2px 5px); }
+.today-chip[data-tex="4"] i { background-image: repeating-linear-gradient(45deg,rgba(255,255,255,0.55) 0 1.5px,transparent 1.5px 6px),repeating-linear-gradient(-45deg,rgba(255,255,255,0.55) 0 1.5px,transparent 1.5px 6px); }
+.today-chip[data-tex="5"] i { background-image: repeating-linear-gradient(90deg,rgba(255,255,255,0.55) 0 2px,transparent 2px 5px); }
+.today-advice { margin: 16px 0 0; padding: 12px 14px; border-left: 3px solid var(--cyan); background: var(--panel-dim); border-radius: 0 8px 8px 0; font-size: 1rem; line-height: 1.5; }
+.today-week { margin: 12px 0 0; font-size: 0.9rem; color: var(--ink-soft); }
+.card-today .btn { margin-top: 16px; }
+
+/* Reset card: bigger, plainer tiles */
+.adjust-chip { min-width: 150px; }
+.adjust-chip small { font-size: 0.82rem; }
+.adjust-chip strong { font-size: 1.1rem; }

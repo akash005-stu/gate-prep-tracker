@@ -1,3 +1,13 @@
+LATEST: PLAIN "TODAY" CARD
+==========================
+- New card at the top: "Do N lectures today", how many are done and left, a progress bar,
+  a suggested split by subject (the subject furthest behind its weekly target first),
+  one plain sentence on being ahead / on plan / behind (with the extra per day to catch up),
+  and this week's progress. It replaces the old "Today's focus" card (hidden, still runs).
+- The reset ("plan re-balanced") card and the Goal tracker now use plain words and labeled tiles
+  ("Monday to Friday: 2 lectures a day"). Goal tracker is now "Overall progress".
+- New accounts start today, so day one is not "behind".
+
 START DATE: Plan settings now has a Start date field (optional). Days before it
   carry no target; weeks still run Monday-Sunday. Cache bumped to v7.
 
